@@ -82,6 +82,13 @@ jobs:
           # Unsigned on purpose: this job answers "does it compile", and pulling
           # signing credentials into it would make a code error and a certificate
           # problem look the same.
+          #
+          # Output goes to a file rather than straight through xcpretty, because
+          # xcpretty drops the body of tool errors: an actool failure came back
+          # as "CompileAssetCatalogVariant ... failed" with no reason in it, and
+          # the reason is the only part worth having. xcpretty still formats the
+          # success path; the raw log is what gets read when something breaks.
+          set +e
           xcodebuild build \
             -project Hearth.xcodeproj \
             -scheme Hearth \
@@ -89,7 +96,20 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty && exit ${PIPESTATUS[0]}
+            > build.log 2>&1
+          status=$?
+          set -e
+
+          if [ $status -ne 0 ]; then
+            echo "::group::errors"
+            grep -nE "error:|error :|❌|fatal" build.log | head -60 || true
+            echo "::endgroup::"
+            echo "::group::last 100 lines of the raw log"
+            tail -100 build.log
+            echo "::endgroup::"
+            exit $status
+          fi
+          xcpretty < build.log
 
       - name: Upload build logs (on failure)
         if: failure()
