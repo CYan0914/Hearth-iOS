@@ -236,7 +236,16 @@ struct LogFormView: View {
         }
 
         if kind != log.kind { body.kind = kind }
-        assign(\.title, title.nilIfEmpty, Optional(log.title))
+
+        // The title is a bare optional, not a `PatchField`, and that is the
+        // server's doing rather than a simplification: `LogUpdate.title` has
+        // `min_length=1`, so an empty title is a 422 and there is no "clear"
+        // state to express. It is sent only when it actually changed. The Save
+        // button already refuses an empty title, so the `if let` is a guard
+        // against the type, not against the user.
+        if let newTitle = title.nilIfEmpty, newTitle != log.title {
+            body.title = newTitle
+        }
 
         let newDate = Self.dayFormatter.string(from: performedOn)
         if newDate != log.performedOn.raw { body.performedOn = .value(newDate) }
