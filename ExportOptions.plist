@@ -3,7 +3,12 @@
 <plist version="1.0">
 <dict>
 	<key>method</key>
-	<string>app-store</string>
+	<!-- Not "app-store". Xcode 26 logs `Command line name "app-store" is
+	     deprecated. Use "app-store-connect" instead` and then fails to find an
+	     App Store profile, even though the team already has five of them for
+	     other bundles -- so the old name is selecting a deprecated distribution
+	     path that no longer provisions. -->
+	<string>app-store-connect</string>
 	<key>teamID</key>
 	<string>H4VQ9X6KYK</string>
 	<key>signingStyle</key>
