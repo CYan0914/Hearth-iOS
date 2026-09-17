@@ -210,6 +210,16 @@ jobs:
           APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
         run: |
           echo "$APPSTORE_API_KEY" > /tmp/AuthKey_${APPSTORE_KEY_ID}.p8
+
+          # What the runner actually holds. A pristine GitHub runner has no
+          # signing identity at all, and that is the thing to know before
+          # reading the export failure: cloud signing is the only source of a
+          # certificate here, so anything it declines to issue, the export
+          # cannot fall back on.
+          echo "=== code signing identities in the keychain ==="
+          security find-identity -v -p codesigning || true
+
+          set +e
           xcodebuild -exportArchive \
             -archivePath Hearth.xcarchive \
             -exportPath ./ipa \
@@ -217,7 +227,35 @@ jobs:
             -allowProvisioningUpdates \
             -authenticationKeyPath /tmp/AuthKey_${APPSTORE_KEY_ID}.p8 \
             -authenticationKeyID "$APPSTORE_KEY_ID" \
-            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID"
+            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID" \
+            > export.log 2>&1
+          status=$?
+          set -e
+
+          if [ $status -ne 0 ]; then
+            echo "::group::export errors"
+            grep -nE "error|warning: .*(profile|certificate)" export.log | head -40 || true
+            echo "::endgroup::"
+
+            # The reason lives in here. xcodebuild prints two summary lines and
+            # puts the actual cause -- which certificate types it looked for and
+            # what it found -- in the distribution log bundle.
+            echo "::group::distribution logs"
+            for d in "$(dirname "$(grep -o '/var/folders/[^"]*\.xcdistributionlogs' export.log | head -1)")"/*.xcdistributionlogs; do
+              [ -d "$d" ] || continue
+              echo "--- $d"
+              find "$d" -type f | head -20
+              for f in "$d"/*.plist "$d"/**/*.plist; do
+                [ -f "$f" ] || continue
+                echo "=== $f"
+                plutil -p "$f" 2>/dev/null | grep -iE "error|certificate|profile|reason|denied|limit" | head -40 || true
+              done
+            done
+            echo "::endgroup::"
+            tail -40 export.log
+            exit $status
+          fi
+          tail -20 export.log
 
       - name: Upload IPA as an artifact
         uses: actions/upload-artifact@v4
