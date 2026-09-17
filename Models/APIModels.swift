@@ -44,6 +44,53 @@ enum HearthDate {
     }
 }
 
+/// A JSON value of unknown shape.
+///
+/// `AnyHashable` is not `Codable`, so `object` below cannot be
+/// `[String: AnyHashable]` -- the compiler rejects that conformance outright, and
+/// it is right to: the type erases exactly the structure the keys of a JSON
+/// object are made of. This enum is the smallest thing that can carry any JSON
+/// value while staying both `Codable` and `Hashable`, and it is what lets
+/// `LenientJSON` accept an object and a string containing one with the same code.
+enum JSONValue: Codable, Hashable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null; return }
+        // Order matters. Bool is tried before Int because JSON `true` is not a
+        // number, and Int before Double because otherwise every integer would
+        // come back as a Double and a round-trip would re-encode `1` as `1.0`.
+        if let v = try? container.decode(Bool.self) { self = .bool(v); return }
+        if let v = try? container.decode(Int.self) { self = .int(v); return }
+        if let v = try? container.decode(Double.self) { self = .double(v); return }
+        if let v = try? container.decode(String.self) { self = .string(v); return }
+        if let v = try? container.decode([String: JSONValue].self) { self = .object(v); return }
+        if let v = try? container.decode([JSONValue].self) { self = .array(v); return }
+        throw DecodingError.dataCorruptedError(
+            in: container, debugDescription: "Not a JSON value")
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let v): try container.encode(v)
+        case .int(let v): try container.encode(v)
+        case .double(let v): try container.encode(v)
+        case .bool(let v): try container.encode(v)
+        case .object(let v): try container.encode(v)
+        case .array(let v): try container.encode(v)
+        case .null: try container.encodeNil()
+        }
+    }
+}
+
 /// Decodes a value that may arrive as either a JSON object or a JSON string
 /// containing one.
 ///
@@ -52,20 +99,20 @@ enum HearthDate {
 /// wrong after a server-side fix, this accepts both and exposes the same
 /// dictionary either way.
 struct LenientJSON: Codable, Hashable {
-    let object: [String: AnyHashable]
+    let object: [String: JSONValue]
 
-    init(object: [String: AnyHashable] = [:]) { self.object = object }
+    init(object: [String: JSONValue] = [:]) { self.object = object }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        if let direct = try? container.decode([String: AnyHashable].self) {
+        if let direct = try? container.decode([String: JSONValue].self) {
             object = direct
             return
         }
         // The string case: the payload is JSON text inside a JSON string.
         if let text = try? container.decode(String.self),
            let data = text.data(using: .utf8),
-           let parsed = try? JSONDecoder().decode([String: AnyHashable].self, from: data) {
+           let parsed = try? JSONDecoder().decode([String: JSONValue].self, from: data) {
             object = parsed
             return
         }
@@ -80,15 +127,15 @@ struct LenientJSON: Codable, Hashable {
         try container.encode(object)
     }
 
-    subscript(key: String) -> AnyHashable? { object[key] }
+    subscript(key: String) -> JSONValue? { object[key] }
 
     /// Reads a flag that the server may have stored as a real bool or as a
     /// string, since it round-trips through JSON text.
     func flag(_ key: String) -> Bool? {
         switch object[key] {
-        case let value as Bool: return value
-        case let value as Int: return value != 0
-        case let value as String: return value == "true" || value == "1"
+        case .bool(let value)?: return value
+        case .int(let value)?: return value != 0
+        case .string(let value)?: return value == "true" || value == "1"
         default: return nil
         }
     }

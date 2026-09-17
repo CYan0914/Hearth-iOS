@@ -53,7 +53,7 @@ struct AssetsView: View {
             }
             .onChange(of: showArchived) { _ in Task { await load() } }
             .sheet(isPresented: $showAdd) {
-                AddAssetView { await load() }
+                AssetFormView(mode: .add) { await load() }
                     .environmentObject(session)
             }
             .confirmationDialog(

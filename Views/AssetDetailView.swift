@@ -534,7 +534,11 @@ private struct LogCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     if let cost = log.costCents {
-                        Text(Money.format(cost, currency: log.currency))
+                        // `log.currency` is optional because a log written before
+                        // the user picked one has none. USD is the server's own
+                        // default, so falling back to it here matches what the
+                        // totals on this screen were computed with.
+                        Text(Money.format(cost, currency: log.currency ?? "USD"))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
