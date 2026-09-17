@@ -1,0 +1,57 @@
+name: Hearth
+options:
+  bundleIdPrefix: com.cyan0914
+  deploymentTarget:
+    iOS: "16.0"
+  minimumXcodeGenVersion: 2.40
+  generateEmptyDirectories: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    ALWAYS_SEARCH_USER_PATHS: NO
+    DEVELOPMENT_TEAM: H4VQ9X6KYK
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    # No INFOPLIST_KEY_* settings here on purpose. They only merge into a
+    # *generated* Info.plist, and the target below sets GENERATE_INFOPLIST_FILE
+    # to NO with an explicit file -- so anything declared that way would be
+    # silently dropped from the built app. Every Info.plist entry, including
+    # ITSAppUsesNonExemptEncryption, lives in Resources/Info.plist instead.
+    # The API host. A build-time value rather than a hardcoded literal, so a
+    # staging build does not need a source edit.
+    HEARTH_API_BASE: https://hearth.taomindapp.com/v1
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+    Release:
+      SWIFT_COMPILATION_MODE: wholemodule
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+
+targets:
+  Hearth:
+    type: application
+    platform: iOS
+    sources:
+      - path: .
+        excludes:
+          - "project.yml"
+          - ".git/"
+          - ".github/"
+          - "**/.gitkeep"
+          - "README.md"
+          - ".gitignore"
+          - "上架材料/"
+          - "ExportOptions.plist"
+          - "Resources/Hearth.entitlements"
+    settings:
+      base:
+        PRODUCT_NAME: Hearth
+        PRODUCT_BUNDLE_IDENTIFIER: com.cyan0914.hearth
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: Resources/Hearth.entitlements
+        INFOPLIST_FILE: Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        HEARTH_API_BASE: $(HEARTH_API_BASE)

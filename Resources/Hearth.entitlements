@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Both capabilities must also be enabled on the App ID and present in the
+	     provisioning profile. Adding a key here without regenerating the profile
+	     makes xcodebuild refuse to sign, rather than shipping a build that
+	     silently cannot receive push. -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+	<!-- Xcode rewrites this to "production" when signing against a distribution
+	     profile. It is "development" here because that is what a debug build
+	     needs, and a distribution profile's copy wins at signing time. -->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

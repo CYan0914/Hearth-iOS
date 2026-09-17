@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Hearth</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+
+	<!-- Injected by xcodebuild at build time. The literal is here only so the
+	     key exists in the plist; no secret is ever committed. -->
+	<key>HearthAPIBase</key>
+	<string>$(HEARTH_API_BASE)</string>
+
+	<!-- Must live in this file, not as an INFOPLIST_KEY_ build setting.
+	     INFOPLIST_KEY_* only merge into a *generated* plist, and this target
+	     sets GENERATE_INFOPLIST_FILE = NO, so a build setting would be silently
+	     ignored and the upload would sit in App Store Connect as "Missing
+	     Compliance" until someone answered the question by hand.
+
+	     False is accurate: the app ships no cryptography of its own. HTTPS and
+	     the Keychain are the OS's, which is what the exemption covers. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+
+	<!-- No CFBundleURLSchemes. The app is opened by universal link or not at
+	     all; a placeholder scheme with capitals or underscores is a documented
+	     App Store rejection (guideline 90158), and an unused one is dead weight. -->
+
+	<key>NSCameraUsageDescription</key>
+	<string>Hearth uses the camera to photograph an appliance's model plate, so it can read the brand and model and set up the right maintenance schedule.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Hearth uses your photo library so you can attach an existing picture of an appliance or its receipt instead of taking a new one.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Hearth saves exported home inventory reports to your photo library when you choose to share them.</string>
+</dict>
+</plist>

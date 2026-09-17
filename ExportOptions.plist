@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store</string>
+	<key>teamID</key>
+	<string>H4VQ9X6KYK</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<!-- The upload is a separate, explicit step in the workflow. Letting the
+	     export do it makes a failed upload indistinguishable from a failed
+	     export, and the IPA is worth having as an artifact either way. -->
+	<key>uploadToAppStore</key>
+	<false/>
+	<key>stripSwiftSymbols</key>
+	<true/>
+	<key>uploadSymbols</key>
+	<true/>
+	<key>manageAppVersionAndBuildNumber</key>
+	<true/>
+</dict>
+</plist>

@@ -1,0 +1,42 @@
+# XcodeGen output. The project is regenerated from project.yml on every build
+# (CI does it explicitly), so a committed .xcodeproj is a merge-conflict magnet
+# that also hides a broken project.yml -- the file that actually matters.
+*.xcodeproj/
+*.xcworkspace/
+
+# Build products.
+build/
+DerivedData/
+*.xcarchive/
+*.ipa/
+*.dSYM.zip
+
+# Xcode per-user state.
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Swift Package Manager.
+.build/
+.swiftpm/
+
+# Signing material. None of this is ever committed, and the .p8 in particular
+# is a credential that cannot be un-leaked once it is in git history.
+#
+# These are listed even though nothing currently writes them into the working
+# tree: the App Store Connect key is written to /tmp by the workflow, and the
+# provisioning profile is managed by Xcode's automatic signing. The rules are
+# here so a future script that does drop one in the repo root cannot quietly
+# commit it.
+*.p8
+AuthKey_*.p8
+*.mobileprovision
+*.cer
+secrets/
+
+# Note: ExportOptions.plist is deliberately NOT ignored. The archive job passes
+# it to xcodebuild, so it has to be in the repo, and it contains no secret --
+# team ID and signing style are public facts about the app.
+
+# macOS.
+.DS_Store

@@ -1,0 +1,222 @@
+name: Build Hearth
+
+# Two jobs in one workflow, and that is deliberate. A compile check and an
+# archive that get split across two files are two things to watch, and the
+# failure mode is watching the wrong one and believing a build succeeded.
+#
+# The archive job only runs when create_ipa is explicitly true, so the default
+# dispatch is a cheap simulator compile.
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_ipa:
+        description: 'Build a signed IPA and upload it to TestFlight'
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Compile check (the default, and what every push runs) ──────────────
+  build:
+    name: Build for iOS Simulator
+    if: github.event_name == 'push' || github.event.inputs.create_ipa != 'true'
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (26+ required for App Store uploads)
+        run: |
+          echo "=== Available Xcode ==="
+          ls -d /Applications/Xcode*.app 2>/dev/null || echo "(none found)"
+          for xc in /Applications/Xcode*.app; do
+            if sudo xcode-select -s "$xc/Contents/Developer" 2>/dev/null; then
+              sdk=$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || echo "unknown")
+              echo "  $xc -> iOS SDK $sdk"
+              if [[ "$sdk" == 2[6-9].* ]] || [[ "$sdk" == [3-9]* ]]; then
+                echo "Selected: $xc (iOS SDK $sdk)"
+                xcodebuild -version
+                exit 0
+              fi
+            fi
+          done
+          echo "No Xcode with SDK 26+ found -- falling back"
+          xcodebuild -version
+
+      - name: Install xcodegen
+        run: |
+          brew install xcodegen 2>/dev/null || brew upgrade xcodegen 2>/dev/null
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: |
+          # Nothing is committed to generate over, but a stale directory from a
+          # cached runner would carry an older Xcode format than the one
+          # selected above, and xcodebuild refuses to open it.
+          rm -rf Hearth.xcodeproj
+          xcodegen generate
+
+      - name: Ensure the iOS platform is installed
+        run: |
+          sudo xcodebuild -license accept 2>&1 || true
+          sudo xcodebuild -runFirstLaunch 2>&1 || true
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            sudo xcodebuild -downloadPlatform iOS -quiet 2>&1 && break
+            echo "Attempt $i failed, sleeping 10s..."
+            sleep 10
+          done
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version || echo "iphoneos SDK not found"
+
+      - name: Build for Simulator
+        run: |
+          # Unsigned on purpose: this job answers "does it compile", and pulling
+          # signing credentials into it would make a code error and a certificate
+          # problem look the same.
+          xcodebuild build \
+            -project Hearth.xcodeproj \
+            -scheme Hearth \
+            -sdk iphonesimulator \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty && exit ${PIPESTATUS[0]}
+
+      - name: Upload build logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: ~/Library/Logs/DiagnosticReports/
+          retention-days: 7
+
+  # ─── Archive and upload (manual, create_ipa=true) ──────────────────────
+  archive:
+    name: Archive for App Store
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_ipa == 'true'
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (26+ required for App Store uploads)
+        run: |
+          echo "=== Available Xcode ==="
+          ls -d /Applications/Xcode*.app 2>/dev/null || echo "(none found)"
+          for xc in /Applications/Xcode*.app; do
+            if sudo xcode-select -s "$xc/Contents/Developer" 2>/dev/null; then
+              sdk=$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || echo "unknown")
+              echo "  $xc -> iOS SDK $sdk"
+              if [[ "$sdk" == 2[6-9].* ]] || [[ "$sdk" == [3-9]* ]]; then
+                echo "Selected: $xc (iOS SDK $sdk)"
+                xcodebuild -version
+                exit 0
+              fi
+            fi
+          done
+          echo "No Xcode with SDK 26+ found -- falling back"
+          xcodebuild -version
+
+      - name: Install xcodegen
+        run: |
+          brew install xcodegen 2>/dev/null || brew upgrade xcodegen 2>/dev/null
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: |
+          rm -rf Hearth.xcodeproj
+          xcodegen generate
+
+      - name: Ensure the iOS platform is installed
+        run: |
+          sudo xcodebuild -license accept 2>&1 || true
+          sudo xcodebuild -runFirstLaunch 2>&1 || true
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            sudo xcodebuild -downloadPlatform iOS -quiet 2>&1 && break
+            echo "Attempt $i failed, sleeping 10s..."
+            sleep 10
+          done
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version || echo "iphoneos SDK not found"
+
+      - name: Archive
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+        run: |
+          if [ -z "$APPSTORE_KEY_ID" ]; then
+            echo "APPSTORE_KEY_ID is not set -- cannot sign. Add the three APPSTORE_* secrets."
+            exit 1
+          fi
+          echo "$APPSTORE_API_KEY" > /tmp/AuthKey_${APPSTORE_KEY_ID}.p8
+          # run_number is monotonic, so a build number never repeats inside a
+          # version train. Reusing one is a 409 on upload.
+          BUILD_NUM=${{ github.run_number }}
+          echo "Using build number $BUILD_NUM"
+          # -allowProvisioningUpdates lets xcodebuild create and register the
+          # profile. Both capabilities this app declares -- Sign in with Apple
+          # and push -- have to be on the App ID already, or signing fails here
+          # rather than at runtime.
+          xcodebuild archive \
+            -project Hearth.xcodeproj \
+            -scheme Hearth \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath Hearth.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath /tmp/AuthKey_${APPSTORE_KEY_ID}.p8 \
+            -authenticationKeyID "$APPSTORE_KEY_ID" \
+            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM=H4VQ9X6KYK \
+            CURRENT_PROJECT_VERSION="$BUILD_NUM"
+
+      - name: Export IPA
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+        run: |
+          echo "$APPSTORE_API_KEY" > /tmp/AuthKey_${APPSTORE_KEY_ID}.p8
+          xcodebuild -exportArchive \
+            -archivePath Hearth.xcarchive \
+            -exportPath ./ipa \
+            -exportOptionsPlist ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath /tmp/AuthKey_${APPSTORE_KEY_ID}.p8 \
+            -authenticationKeyID "$APPSTORE_KEY_ID" \
+            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID"
+
+      - name: Upload IPA as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hearth-ipa
+          path: ipa/Hearth.ipa
+          retention-days: 30
+
+      - name: Upload to TestFlight
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+        run: |
+          mkdir -p ~/private_keys
+          echo "$APPSTORE_API_KEY" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
+          xcrun altool --upload-app \
+            -f "ipa/Hearth.ipa" \
+            --apiKey "$APPSTORE_KEY_ID" \
+            --apiIssuer "$APPSTORE_ISSUER_ID" \
+            --type ios \
+            --verbose 2>&1

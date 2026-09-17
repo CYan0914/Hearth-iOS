@@ -1,0 +1,94 @@
+import SwiftUI
+import UserNotifications
+
+@main
+struct HearthApp: App {
+    @StateObject private var session = SessionStore()
+
+    /// The notification coordinator is also the app delegate, because the APNs
+    /// device token is only ever delivered to a delegate method. `@StateObject`
+    /// would compile and never receive one.
+    @UIApplicationDelegateAdaptor(NotificationCoordinator.self) private var notifications
+
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// Held here rather than in the coordinator because the token is only useful
+    /// once there is a session to attach it to, and the coordinator does not
+    /// know about sessions.
+    @State private var deviceToken: String?
+
+    var body: some Scene {
+        WindowGroup {
+            RootView()
+                .environmentObject(session)
+                .environmentObject(notifications)
+                .task {
+                    notifications.onTokenReceived = { token in
+                        deviceToken = token
+                        Task { await registerDevice(token) }
+                    }
+                    await session.restore()
+                    await notifications.refreshStatus()
+                    if session.isSignedIn { notifications.requestAuthorization() }
+                }
+                .onChange(of: session.isSignedIn) { signedIn in
+                    // Push is requested here rather than at launch: the user has
+                    // just signed in and knows what the app is for, which is the
+                    // only moment the prompt gets a fair hearing. iOS only asks
+                    // once.
+                    guard signedIn else { return }
+                    notifications.requestAuthorization()
+                    if let token = deviceToken {
+                        Task { await registerDevice(token) }
+                    }
+                }
+        }
+        .onChange(of: scenePhase) { phase in
+            // Counts and due dates move while the app is backgrounded -- the
+            // scheduler materializes tasks overnight. Refreshing on the way in is
+            // cheaper than polling and is exactly when staleness would be seen.
+            if phase == .active, session.isSignedIn {
+                Task { await session.refresh() }
+            }
+        }
+    }
+
+    /// POST /devices. Re-sent on every launch and every sign-in, because there is
+    /// no way for the client to know whether the last registration survived: a
+    /// reinstall can change the token, and the server may have reassigned it to
+    /// another account on this handset.
+    private func registerDevice(_ token: String) async {
+        guard session.isSignedIn else { return }
+        do {
+            _ = try await HearthAPI.registerDevice(.init(
+                token: token,
+                environment: Self.apnsEnvironment,
+                appVersion: Bundle.main.shortVersion
+            ))
+        } catch {
+            // Not surfaced. A failed device registration costs push delivery,
+            // which the in-app notification centre still covers, and interrupting
+            // the user with something they cannot act on is worse than a silent
+            // retry on the next launch.
+            print("[Hearth] device registration failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Must match the entitlement the build was signed with, not the build
+    /// configuration: a debug build signed against a distribution profile talks
+    /// to production APNs. `#if DEBUG` is the closest the code can get, and it
+    /// is correct for every configuration this project produces.
+    private static var apnsEnvironment: String {
+        #if DEBUG
+        return "sandbox"
+        #else
+        return "production"
+        #endif
+    }
+}
+
+extension Bundle {
+    var shortVersion: String {
+        object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+    }
+}
