@@ -237,20 +237,33 @@ jobs:
             grep -nE "error|warning: .*(profile|certificate)" export.log | head -40 || true
             echo "::endgroup::"
 
-            # The reason lives in here. xcodebuild prints two summary lines and
-            # puts the actual cause -- which certificate types it looked for and
-            # what it found -- in the distribution log bundle.
+            # The reason lives in these. xcodebuild prints two summary lines and
+            # puts the actual cause -- the exchanges with App Store Connect, which
+            # certificate types it looked for and what came back -- in the
+            # distribution log bundle.
+            #
+            # They are .log files, not .plist. An earlier version of this step
+            # globbed for *.plist, found none, and so printed the file listing
+            # and not one line of content -- which is why the failure stayed
+            # unexplained across two runs.
             echo "::group::distribution logs"
-            for d in "$(dirname "$(grep -o '/var/folders/[^"]*\.xcdistributionlogs' export.log | head -1)")"/*.xcdistributionlogs; do
-              [ -d "$d" ] || continue
-              echo "--- $d"
-              find "$d" -type f | head -20
-              for f in "$d"/*.plist "$d"/**/*.plist; do
-                [ -f "$f" ] || continue
-                echo "=== $f"
-                plutil -p "$f" 2>/dev/null | grep -iE "error|certificate|profile|reason|denied|limit" | head -40 || true
+            logs_dir="$(dirname "$(grep -o '/var/folders/[^"]*\.xcdistributionlogs' export.log | head -1)")"
+            if [ -d "$logs_dir" ]; then
+              for d in "$logs_dir"/*.xcdistributionlogs; do
+                [ -d "$d" ] || continue
+                echo "--- $d"
+                find "$d" -name '*.log' -type f | sort | while IFS= read -r f; do
+                  echo "=== $(basename "$f")"
+                  tail -70 "$f"
+                done
               done
-            done
+            else
+              echo "(no distribution log directory; looked in: $logs_dir)"
+            fi
+            echo "::endgroup::"
+
+            echo "::group::what the export was told to do"
+            cat ExportOptions.plist
             echo "::endgroup::"
             tail -40 export.log
             exit $status
