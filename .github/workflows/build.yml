@@ -212,6 +212,12 @@ jobs:
           echo "profile bytes: $(wc -c < ~/Library/MobileDevice/Provisioning\ Profiles/hearth.mobileprovision)"
 
           printf '%s' "$DIST_CERT_P12" | base64 --decode > /tmp/dist.p12
+          # Both sizes, so a future failure says which layer broke. A secret
+          # that arrives truncated makes the decoded file short and the import
+          # blame the password; a file of the right size that still will not
+          # import means the format is wrong instead.
+          echo "DIST_CERT_P12: ${#DIST_CERT_P12} chars -> $(wc -c < /tmp/dist.p12) decoded bytes"
+          echo "password length: ${#DIST_CERT_PASSWORD}"
 
           # A throwaway keychain, because a GitHub runner's default keychain is
           # not unlocked for codesign and unlocking the system one is fiddlier
@@ -227,9 +233,27 @@ jobs:
           # prompt that nobody can answer on a headless runner. Skipping either
           # produces errSecInternalComponent at codesign time, several steps
           # later than the import.
-          security import /tmp/dist.p12 -k build.keychain \
+          #
+          # The p12 is built with a SHA-1 MAC and 3DES, not the PBES2/PBKDF2
+          # defaults. macOS's Security framework verifies only the traditional
+          # MAC and reports a mismatch as a wrong password, which is how a
+          # format problem masqueraded as a bad secret for a whole run. See
+          # hearth_make_p12_legacy.py.
+          if ! security import /tmp/dist.p12 -k build.keychain \
             -P "$DIST_CERT_PASSWORD" \
-            -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productbuild
+            -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productbuild; then
+            echo "::error::Could not import the distribution p12."
+            echo "::group::what openssl says about the p12 it was given"
+            # The password goes through a file rather than the command line,
+            # because a native command's arguments are visible in the process
+            # list and readable by any other process on the machine.
+            printf '%s' "$DIST_CERT_PASSWORD" > /tmp/pw.txt
+            openssl pkcs12 -in /tmp/dist.p12 -info -nokeys \
+              -passin file:/tmp/pw.txt 2>&1 | head -20 || true
+            rm -f /tmp/pw.txt
+            echo "::endgroup::"
+            exit 1
+          fi
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "" build.keychain > /dev/null
           rm -f /tmp/dist.p12
