@@ -170,64 +170,140 @@ jobs:
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version || echo "iphoneos SDK not found"
 
-      - name: Archive
+      # ── Manual signing ───────────────────────────────────────────────────
+      # Automatic signing cannot work from CI on this account, and the reason
+      # is worth writing down because it is not the obvious one.
+      #
+      # Xcode 26's automatic export does not ask App Store Connect for an
+      # ordinary IOS_DISTRIBUTION certificate. It asks for a
+      # DISTRIBUTION_MANAGED one -- cloud-managed, key held by Apple:
+      #
+      #   POST appstoreconnect.apple.com/xcbuild/v1/certificates
+      #        filter[certificateType]=DISTRIBUTION_MANAGED
+      #   -> 403 FORBIDDEN_ERROR, resultCode 7495
+      #      "You haven't been given access to cloud-managed distribution
+      #       certificates."
+      #
+      # An API-key session is refused that endpoint, so automatic signing never
+      # reaches a distribution identity, the archive falls back to a
+      # development one, and the export has nothing to sign with. Freeing a
+      # certificate slot does not touch it: the refusal is about permission on
+      # a certificate *type*, not about the account being at a limit.
+      #
+      # So the identity is imported explicitly here, and both signing steps run
+      # manual. The profile is written into the runner's profile directory
+      # because that is where codesign looks; importing the certificate alone
+      # is not enough.
+      - name: Import distribution identity
         env:
-          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
-          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          DIST_CERT_P12: ${{ secrets.DIST_CERT_P12 }}
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
+          DIST_PROFILE: ${{ secrets.DIST_PROFILE }}
         run: |
-          if [ -z "$APPSTORE_KEY_ID" ]; then
-            echo "APPSTORE_KEY_ID is not set -- cannot sign. Add the three APPSTORE_* secrets."
+          set -e
+          if [ -z "$DIST_CERT_P12" ]; then
+            echo "DIST_CERT_P12 is not set -- cannot sign for distribution."
             exit 1
           fi
-          echo "$APPSTORE_API_KEY" > /tmp/AuthKey_${APPSTORE_KEY_ID}.p8
-          # run_number is monotonic, so a build number never repeats inside a
-          # version train. Reusing one is a 409 on upload.
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          printf '%s' "$DIST_PROFILE" | base64 --decode \
+            > ~/Library/MobileDevice/Provisioning\ Profiles/hearth.mobileprovision
+          echo "profile bytes: $(wc -c < ~/Library/MobileDevice/Provisioning\ Profiles/hearth.mobileprovision)"
+
+          printf '%s' "$DIST_CERT_P12" | base64 --decode > /tmp/dist.p12
+
+          # A throwaway keychain, because a GitHub runner's default keychain is
+          # not unlocked for codesign and unlocking the system one is fiddlier
+          # than making a new one.
+          security create-keychain -p "" build.keychain
+          security set-keychain-settings -lut 3600 build.keychain
+          security unlock-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security list-keychains -d user -s build.keychain $(security list-keychains -d user | tr -d '"')
+
+          # -T names the tools allowed to use the key without prompting, and
+          # set-key-partition-list is what stops macOS from putting up a GUI
+          # prompt that nobody can answer on a headless runner. Skipping either
+          # produces errSecInternalComponent at codesign time, several steps
+          # later than the import.
+          security import /tmp/dist.p12 -k build.keychain \
+            -P "$DIST_CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "" build.keychain > /dev/null
+          rm -f /tmp/dist.p12
+
+          echo "=== identities now available ==="
+          security find-identity -v -p codesigning build.keychain
+
+          # Assert it, rather than letting a later step report the absence in
+          # its own words. find-identity omits identities whose chain does not
+          # validate, so this also catches a p12 that imported without its
+          # intermediate.
+          if ! security find-identity -v -p codesigning build.keychain \
+               | grep -q "Apple Distribution"; then
+            echo "::error::No 'Apple Distribution' identity after import. The p12 imported but is not usable for signing."
+            exit 1
+          fi
+
+      - name: Archive
+        env:
+          DIST_PROFILE_SPECIFIER: ${{ secrets.DIST_PROFILE_SPECIFIER }}
+        run: |
           BUILD_NUM=${{ github.run_number }}
           echo "Using build number $BUILD_NUM"
-          # -allowProvisioningUpdates lets xcodebuild create and register the
-          # profile. Both capabilities this app declares -- Sign in with Apple
-          # and push -- have to be on the App ID already, or signing fails here
-          # rather than at runtime.
+
+          # No -allowProvisioningUpdates and no -authenticationKey*: those exist
+          # to let Xcode talk to App Store Connect and create things, which is
+          # the path that is forbidden above. Manual signing already has
+          # everything it needs on disk.
+          #
+          # Both capabilities this app declares -- Sign in with Apple and push
+          # -- are in the profile that was just installed, so they survive into
+          # the signature.
           xcodebuild archive \
             -project Hearth.xcodeproj \
             -scheme Hearth \
             -configuration Release \
             -sdk iphoneos \
             -archivePath Hearth.xcarchive \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath /tmp/AuthKey_${APPSTORE_KEY_ID}.p8 \
-            -authenticationKeyID "$APPSTORE_KEY_ID" \
-            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$DIST_PROFILE_SPECIFIER" \
             DEVELOPMENT_TEAM=H4VQ9X6KYK \
             CURRENT_PROJECT_VERSION="$BUILD_NUM"
 
-      - name: Export IPA
-        env:
-          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
-          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
-        run: |
-          echo "$APPSTORE_API_KEY" > /tmp/AuthKey_${APPSTORE_KEY_ID}.p8
+          # What the archive was actually signed with, read back off the binary
+          # rather than inferred from the settings above. The failure this
+          # replaces was an archive signed with a *development* identity that
+          # looked fine until the export could not use it.
+          echo "=== archive signature ==="
+          codesign -dv --verbose=4 \
+            Hearth.xcarchive/Products/Applications/Hearth.app 2>&1 \
+            | grep -E "Authority|Identifier|TeamIdentifier" || true
+          if ! codesign -dv --verbose=4 \
+               Hearth.xcarchive/Products/Applications/Hearth.app 2>&1 \
+               | grep -q "Authority=Apple Distribution"; then
+            echo "::error::Archive is not signed with an Apple Distribution identity."
+            exit 1
+          fi
 
-          # What the runner actually holds. A pristine GitHub runner has no
-          # signing identity at all, and that is the thing to know before
-          # reading the export failure: cloud signing is the only source of a
-          # certificate here, so anything it declines to issue, the export
-          # cannot fall back on.
+      - name: Export IPA
+        run: |
+          # No -allowProvisioningUpdates and no authentication key here. Both
+          # were removed together with automatic signing: they exist to let
+          # Xcode create certificates and profiles through App Store Connect,
+          # and that is precisely the endpoint that answers 403 to an API-key
+          # session. The identity and the profile are already on disk.
           echo "=== code signing identities in the keychain ==="
-          security find-identity -v -p codesigning || true
+          security find-identity -v -p codesigning
 
           set +e
           xcodebuild -exportArchive \
             -archivePath Hearth.xcarchive \
             -exportPath ./ipa \
             -exportOptionsPlist ExportOptions.plist \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath /tmp/AuthKey_${APPSTORE_KEY_ID}.p8 \
-            -authenticationKeyID "$APPSTORE_KEY_ID" \
-            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID" \
             > export.log 2>&1
           status=$?
           set -e

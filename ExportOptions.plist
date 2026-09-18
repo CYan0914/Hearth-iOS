@@ -2,17 +2,36 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Not "app-store". Xcode 26 logs that the old name is deprecated in
+	     favour of "app-store-connect". -->
 	<key>method</key>
-	<!-- Not "app-store". Xcode 26 logs `Command line name "app-store" is
-	     deprecated. Use "app-store-connect" instead` and then fails to find an
-	     App Store profile, even though the team already has five of them for
-	     other bundles -- so the old name is selecting a deprecated distribution
-	     path that no longer provisions. -->
 	<string>app-store-connect</string>
 	<key>teamID</key>
 	<string>H4VQ9X6KYK</string>
+
+	<!-- Manual, because automatic cannot work here. Xcode's automatic export
+	     asks App Store Connect for a DISTRIBUTION_MANAGED (cloud-managed)
+	     certificate, and refuses an API-key session with 403 FORBIDDEN_ERROR /
+	     resultCode 7495. So the identity is imported into the runner's keychain
+	     and named here explicitly.
+
+	     "Apple Distribution" is matched by prefix against the certificate's
+	     common name, which is "Apple Distribution: HAOJIA ZHANG (H4VQ9X6KYK)".
+	     The bare name is used rather than the full string because it is what
+	     the workflow asserts on before archiving. -->
 	<key>signingStyle</key>
-	<string>automatic</string>
+	<string>manual</string>
+	<key>signingCertificate</key>
+	<string>Apple Distribution</string>
+	<!-- Keyed by bundle id. A build with more than one target needs an entry
+	     each, and a target named here but missing from the profile fails the
+	     export rather than falling back. -->
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>com.cyan0914.hearth</key>
+		<string>Hearth App Store</string>
+	</dict>
+
 	<!-- The upload is a separate, explicit step in the workflow. Letting the
 	     export do it makes a failed upload indistinguishable from a failed
 	     export, and the IPA is worth having as an artifact either way. -->
@@ -22,7 +41,11 @@
 	<true/>
 	<key>uploadSymbols</key>
 	<true/>
+	<!-- Off, now that signing is manual. It rewrites the build number during
+	     export, which would make the number on the uploaded build differ from
+	     the ${{ github.run_number }} the archive was stamped with. The archive
+	     step already sets CURRENT_PROJECT_VERSION. -->
 	<key>manageAppVersionAndBuildNumber</key>
-	<true/>
+	<false/>
 </dict>
 </plist>
