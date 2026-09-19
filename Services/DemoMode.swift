@@ -124,17 +124,17 @@ enum DemoMode {
         quietEndMin: 8 * 60,
         plan: "pro",
         createdAt: stamp(daysAgo: 240),
-        // A fixed, well-formed UUID so the profile decodes as a real one does.
-        // The screenshot build never opens a purchase sheet, but a token here
-        // keeps the demo user structurally identical to a signed-in one.
-        appAccountToken: "00000000-0000-4000-8000-000000000000",
         limits: Limits(
             maxAssets: 10_000,
             photosPerAsset: 100,
             logEntries: 10_000,
             templateTier: "all",
             exports: ["csv", "pdf"]
-        )
+        ),
+        // A fixed, well-formed UUID so the profile decodes as a real one does.
+        // The screenshot build never opens a purchase sheet, but a token here
+        // keeps the demo user structurally identical to a signed-in one.
+        appAccountToken: "00000000-0000-4000-8000-000000000000"
     )
 
     // MARK: - Endpoints
