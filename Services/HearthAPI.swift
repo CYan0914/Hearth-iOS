@@ -76,6 +76,71 @@ enum HearthAPI {
         try await APIClient.shared.delete("/account", body: AccountDelete())
     }
 
+    // MARK: - Purchases
+
+    struct TransactionVerify: Encodable {
+        let signedTransaction: String
+
+        enum CodingKeys: String, CodingKey {
+            case signedTransaction = "signed_transaction"
+        }
+    }
+
+    /// Verify a StoreKit transaction and update the account's plan.
+    ///
+    /// The JWS goes over the wire unmodified. Decoding it here to send fields
+    /// would be pointless twice over: the server re-derives all of it from the
+    /// signed payload, and a client-supplied "productId" is exactly the value
+    /// that must never be trusted.
+    static func verifyPurchase(signedTransaction: String) async throws -> PurchaseVerifyResponse {
+        try await APIClient.shared.post(
+            "/purchases/verify",
+            body: TransactionVerify(signedTransaction: signedTransaction)
+        )
+    }
+
+    static func purchaseProducts() async throws -> PurchaseProductsResponse {
+        try await APIClient.shared.get("/purchases/products")
+    }
+
+    // MARK: - Exports
+
+    /// What this account may export, and what it would contain.
+    ///
+    /// Read before the download rather than after, so a free user sees the
+    /// paywall instead of a 402 the app has to explain.
+    static func exportSummary(category: String? = nil) async throws -> ExportSummary {
+        #if DEBUG
+        if DemoMode.isEnabled { return DemoMode.exportSummary() }
+        #endif
+        return try await APIClient.shared.get("/exports", query: ["category": category])
+    }
+
+    /// The inventory document itself.
+    ///
+    /// `format` is "pdf" or "csv" and is checked against the server's own
+    /// answer rather than trusted from the caller: the gate is the server's to
+    /// enforce, and a client that only *believes* it is Pro is a client that
+    /// shows a button which fails.
+    static func downloadInventory(format: String, category: String? = nil) async throws -> DownloadedFile {
+        let file = try await APIClient.shared.download(
+            "/exports/inventory.\(format)",
+            query: ["category": category]
+        )
+        // The server names the file, and normally that name carries the
+        // extension. It is made to here as well because a share sheet handed
+        // "hearth-inventory" with no suffix offers the user a file iOS cannot
+        // open -- and the format is known, so the fallback costs nothing.
+        guard !file.filename.lowercased().hasSuffix(".\(format.lowercased())") else {
+            return file
+        }
+        return DownloadedFile(
+            data: file.data,
+            filename: "\(file.filename).\(format)",
+            contentType: file.contentType
+        )
+    }
+
     // MARK: - Scan
 
     struct ScanRequest: Encodable {

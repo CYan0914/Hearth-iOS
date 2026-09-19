@@ -5,6 +5,12 @@ import UserNotifications
 struct HearthApp: App {
     @StateObject private var session = SessionStore()
 
+    /// Held at the app level, not inside the paywall, because its `init` is what
+    /// starts the `Transaction.updates` listener. A store created when the
+    /// paywall opens only hears about renewals that happen while the user is
+    /// looking at the paywall -- which is to say, almost none of them.
+    @StateObject private var purchases = PurchaseStore()
+
     /// The notification coordinator is also the app delegate, because the APNs
     /// device token is only ever delivered to a delegate method. `@StateObject`
     /// would compile and never receive one.
@@ -22,6 +28,7 @@ struct HearthApp: App {
             RootView()
                 .environmentObject(session)
                 .environmentObject(notifications)
+                .environmentObject(purchases)
                 .task {
                     notifications.onTokenReceived = { token in
                         deviceToken = token

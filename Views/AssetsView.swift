@@ -18,6 +18,7 @@ struct AssetsView: View {
     @State private var archiving: Asset?
     @State private var pendingDelete: Asset?
     @State private var path: [String] = []
+    @State private var showPaywall = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -55,17 +56,22 @@ struct AssetsView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showAdd = true
+                        // A disabled button at the ceiling explains nothing --
+                        // the user taps a grey plus and learns only that the
+                        // app is broken. It stays enabled and says why instead.
+                        if session.canAddAsset { showAdd = true } else { showPaywall = true }
                     } label: {
                         Image(systemName: "plus")
                     }
-                    .disabled(!session.canAddAsset)
                 }
             }
             .onChange(of: showArchived) { _ in Task { await load() } }
             .sheet(isPresented: $showAdd) {
                 AssetFormView(mode: .add) { await load() }
                     .environmentObject(session)
+            }
+            .sheet(isPresented: $showPaywall) {
+                PaywallView().environmentObject(session)
             }
             .confirmationDialog(
                 "Delete \(pendingDelete?.name ?? "this asset")?",
@@ -98,6 +104,12 @@ struct AssetsView: View {
                     .listRowSeparator(.hidden)
             }
 
+            if !session.canAddAsset && !assets.isEmpty {
+                atLimit
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+
             ForEach(filtered) { asset in
                 NavigationLink(value: asset.id) {
                     AssetRow(asset: asset)
@@ -112,6 +124,26 @@ struct AssetsView: View {
             }
         }
         .listStyle(.plain)
+    }
+
+    /// Shown once the list is full. The ceiling is a fact about the account and
+    /// the user should meet it here, in the list, rather than as a surprise on
+    /// the form they just filled in.
+    private var atLimit: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "shippingbox")
+                .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Your free plan holds \(session.user?.limits.maxAssets ?? 3) things.")
+                    .font(.subheadline.weight(.medium))
+                Text("Upgrade to add the rest of the house.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button("See Hearth Pro") { showPaywall = true }
+                    .font(.subheadline.weight(.medium))
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     /// Filtered on the device, not the server. The whole list is at most a few

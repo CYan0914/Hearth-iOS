@@ -24,6 +24,8 @@ struct SettingsView: View {
 
     @State private var confirmSignOut = false
     @State private var showDeleteAccount = false
+    @State private var showPaywall = false
+    @State private var showReports = false
 
     var body: some View {
         NavigationStack {
@@ -33,6 +35,8 @@ struct SettingsView: View {
                 }
 
                 profile
+                planSection
+                reports
                 reminders
                 deviceSection
                 about
@@ -59,6 +63,12 @@ struct SettingsView: View {
             .sheet(isPresented: $showDeleteAccount) {
                 DeleteAccountView { await session.signOut() }
                     .environmentObject(session)
+            }
+            .sheet(isPresented: $showPaywall) {
+                PaywallView().environmentObject(session)
+            }
+            .sheet(isPresented: $showReports) {
+                ReportsView().environmentObject(session)
             }
         }
     }
@@ -151,13 +161,93 @@ struct SettingsView: View {
         return parts.joined(separator: " · ")
     }
 
+    // MARK: - Plan
+
+    /// The upgrade row, or what is already owned.
+    ///
+    /// Subscribed users get a status line rather than a disabled button: the
+    /// only action available to them is cancelling, and that lives in Apple's
+    /// subscription settings, not here. Sending them to a paywall they cannot
+    /// buy from would be worse than saying nothing.
+    private var planSection: some View {
+        Section {
+            if session.user?.plan == "pro" {
+                LabeledContent("Plan", value: "Hearth Pro")
+                Link("Manage subscription",
+                     destination: URL(string: "https://apps.apple.com/account/subscriptions")!)
+            } else {
+                Button {
+                    showPaywall = true
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Upgrade to Hearth Pro").font(.body.weight(.medium))
+                            Text("Insurance report, every schedule, no limits")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        } header: {
+            Text("Plan")
+        }
+    }
+
+    // MARK: - Reports
+
+    /// The export lives here rather than behind a toolbar icon on the asset
+    /// list, because it is not an action on an asset. Nobody exports an
+    /// inventory twice a week; they export it when something happened, and a
+    /// rarely-used destructive-looking icon in the main flow costs more
+    /// attention than it earns.
+    private var reports: some View {
+        Section {
+            Button {
+                showReports = true
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Insurance inventory").font(.body)
+                        Text(reportSubtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        } header: {
+            Text("Reports")
+        }
+    }
+
+    /// Says which formats this account has, so the row is not a promise the
+    /// next screen breaks. Read from the server's limits, not from a local
+    /// guess about what Pro means.
+    private var reportSubtitle: String {
+        let exports = session.user?.limits.exports ?? []
+        if exports.contains("pdf") {
+            return "PDF and CSV, with photos and serial numbers"
+        }
+        return "CSV now. The PDF report is part of Hearth Pro."
+    }
+
     // MARK: - About
 
     private var about: some View {
         Section {
             LabeledContent("Version", value: Bundle.main.shortVersion)
             if let tier = session.user?.limits.templateTier {
-                LabeledContent("Maintenance guide", value: tier == "full" ? "Full" : "Standard")
+                // "all" is the value the server sends; comparing against "full"
+                // showed every Pro user "Standard".
+                LabeledContent("Maintenance guide", value: tier == "all" ? "Full" : "Standard")
             }
             if let limits = session.user?.limits {
                 LabeledContent("Things you can add", value: "\(limits.maxAssets)")

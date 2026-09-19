@@ -64,6 +64,13 @@ enum APIError: LocalizedError, Equatable {
     }
 }
 
+/// Bytes from an endpoint that serves a document rather than JSON.
+struct DownloadedFile {
+    let data: Data
+    let filename: String
+    let contentType: String?
+}
+
 /// A thin wrapper over URLSession: encode, send, decode, and turn every failure
 /// into an `APIError`.
 ///
@@ -211,6 +218,87 @@ actor APIClient {
         } catch {
             throw APIError.transport("The photo could not be uploaded. Check your connection.")
         }
+    }
+
+    /// Fetch bytes rather than JSON, for the inventory exports.
+    ///
+    /// Shares `mapError` with `send` so a lapsed session, a rate limit, or a 402
+    /// from the plan gate surfaces as the same `APIError` the rest of the app
+    /// already knows how to present. The filename comes from the server's
+    /// Content-Disposition: it is the one that carries the date, and rebuilding
+    /// it here would let the two disagree.
+    func download(_ path: String, query: [String: String?] = [:]) async throws -> DownloadedFile {
+        guard var components = URLComponents(
+            url: baseURL.appendingPathComponent(path.hasPrefix("/") ? String(path.dropFirst()) : path),
+            resolvingAgainstBaseURL: false
+        ) else {
+            throw APIError.transport("Could not build a request for \(path).")
+        }
+        let items = query.compactMap { key, value -> URLQueryItem? in
+            value.map { URLQueryItem(name: key, value: $0) }
+        }
+        if !items.isEmpty { components.queryItems = items }
+        guard let url = components.url else {
+            throw APIError.transport("Could not build a request for \(path).")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        if let token = tokenProvider?() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        // A PDF with photos takes longer than a JSON call, and the resource
+        // timeout is 45s. Raised for this one request rather than globally, so a
+        // stalled ordinary call still fails fast.
+        request.timeoutInterval = 90
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let error as URLError {
+            throw APIError.transport(Self.message(for: error))
+        } catch {
+            throw APIError.transport("Something went wrong reaching the server.")
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.transport("The server did not return a response.")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let apiError = Self.mapError(status: http.statusCode, data: data, headers: http)
+            if apiError.requiresSignOut, let onUnauthorized {
+                await onUnauthorized()
+            }
+            throw apiError
+        }
+        guard !data.isEmpty else {
+            // An empty 200 would otherwise be written to disk as a zero-byte
+            // report the user cannot open, and would only find out at the
+            // insurer's desk.
+            throw APIError.server(status: http.statusCode, code: "empty_export")
+        }
+
+        return DownloadedFile(
+            data: data,
+            filename: Self.filename(from: http) ?? "hearth-inventory",
+            contentType: http.value(forHTTPHeaderField: "Content-Type")
+        )
+    }
+
+    private static func filename(from response: HTTPURLResponse) -> String? {
+        guard let disposition = response.value(forHTTPHeaderField: "Content-Disposition") else {
+            return nil
+        }
+        // `attachment; filename="hearth-inventory-2026-09-19.pdf"`, possibly with
+        // other parameters before or after. Only the quoted filename matters.
+        guard let range = disposition.range(of: "filename=\"") else { return nil }
+        let rest = disposition[range.upperBound...]
+        guard let end = rest.firstIndex(of: "\"") else { return nil }
+        let name = String(rest[..<end])
+        // A filename from a header is still input. Anything with a path
+        // separator in it would write outside the directory we hand it to.
+        return name.isEmpty || name.contains("/") || name.contains("\\") ? nil : name
     }
 
     // MARK: - The single request path

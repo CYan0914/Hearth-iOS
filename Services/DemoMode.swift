@@ -124,6 +124,10 @@ enum DemoMode {
         quietEndMin: 8 * 60,
         plan: "pro",
         createdAt: stamp(daysAgo: 240),
+        // A fixed, well-formed UUID so the profile decodes as a real one does.
+        // The screenshot build never opens a purchase sheet, but a token here
+        // keeps the demo user structurally identical to a signed-in one.
+        appAccountToken: "00000000-0000-4000-8000-000000000000",
         limits: Limits(
             maxAssets: 10_000,
             photosPerAsset: 100,
@@ -226,6 +230,27 @@ enum DemoMode {
 
     static func searchRecalls(_ query: String) -> RecallSearchResponse {
         RecallSearchResponse(query: query, count: 0, results: [])
+    }
+
+    /// The report summary for the demo home.
+    ///
+    /// Counted from the same seed the asset list uses, so the Reports screen and
+    /// the list cannot disagree in a screenshot -- which is exactly the kind of
+    /// mismatch a store screenshot would show off.
+    static func exportSummary() -> ExportSummary {
+        let priced = Seeds.assets.compactMap(\.purchasePriceCents)
+        return ExportSummary(
+            available: ["csv", "pdf"],
+            items: Seeds.assets.count,
+            truncated: false,
+            valueCents: priced.reduce(0, +),
+            formats: [
+                ExportSummary.ExportFormat(
+                    format: "pdf", path: "/v1/exports/inventory.pdf", available: true),
+                ExportSummary.ExportFormat(
+                    format: "csv", path: "/v1/exports/inventory.csv", available: true),
+            ]
+        )
     }
 
     // MARK: - The scan flow

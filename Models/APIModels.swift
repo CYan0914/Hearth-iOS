@@ -219,6 +219,19 @@ struct User: Codable, Identifiable, Hashable {
     let createdAt: String?
     let limits: Limits
 
+    /// The UUID this account is known by to StoreKit.
+    ///
+    /// Passed as `appAccountToken` when a purchase starts, so the transaction
+    /// Apple signs carries the account it belongs to and the server can refuse
+    /// one that belongs to somebody else. Optional only because a build talking
+    /// to an older server would not receive it; a purchase without it is
+    /// rejected by the backend, which is the correct failure.
+    let appAccountToken: String?
+
+    var accountToken: UUID? {
+        appAccountToken.flatMap(UUID.init(uuidString:))
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, email, timezone, plan, limits
         case emailVerified = "email_verified"
@@ -226,6 +239,7 @@ struct User: Codable, Identifiable, Hashable {
         case quietStartMin = "quiet_start_min"
         case quietEndMin = "quiet_end_min"
         case createdAt = "created_at"
+        case appAccountToken = "app_account_token"
     }
 
     /// Quiet hours default to 20:00-08:00 when unset, matching the server's own
@@ -249,6 +263,80 @@ struct Limits: Codable, Hashable {
         case photosPerAsset = "photos_per_asset"
         case logEntries = "log_entries"
         case templateTier = "template_tier"
+    }
+}
+
+/// What the account may export, and what the document would contain.
+///
+/// Both halves matter: `available` decides which buttons work, and the counts
+/// let the screen say what is about to be produced. `formats` is read from the
+/// server rather than derived from `available` so the paths live in one place.
+struct ExportSummary: Codable {
+    let available: [String]
+    let items: Int
+    let truncated: Bool
+    let valueCents: Int
+    let formats: [ExportFormat]
+
+    struct ExportFormat: Codable, Hashable, Identifiable {
+        let format: String
+        let path: String
+        let available: Bool
+
+        var id: String { format }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case available, items, truncated, formats
+        case valueCents = "value_cents"
+    }
+
+    var canExportPDF: Bool { available.contains("pdf") }
+    var canExportCSV: Bool { available.contains("csv") }
+
+    /// Value of the priced items, or nil when nothing has a price.
+    ///
+    /// nil rather than "$0.00": an inventory where the owner never recorded a
+    /// price is not worth nothing, and printing zero would say it was.
+    var valueText: String? {
+        guard valueCents > 0 else { return nil }
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = 2
+        return f.string(from: NSNumber(value: Double(valueCents) / 100))
+    }
+}
+
+/// What the server decided about a transaction. `active` is false for a
+/// verifiable but lapsed subscription, which is a 200 and not an error -- the
+/// caller is restoring and simply has nothing.
+struct PurchaseVerifyResponse: Codable {
+    let plan: String
+    let active: Bool
+    let productID: String?
+    let expiresAt: String?
+    let limits: Limits
+
+    enum CodingKeys: String, CodingKey {
+        case plan, active, limits
+        case productID = "product_id"
+        case expiresAt = "expires_at"
+    }
+}
+
+struct PurchaseProductsResponse: Codable {
+    let products: [PurchaseProduct]
+
+    struct PurchaseProduct: Codable, Hashable {
+        let productID: String
+        let plan: String
+        let kind: String
+
+        enum CodingKeys: String, CodingKey {
+            case plan, kind
+            case productID = "product_id"
+        }
     }
 }
 
