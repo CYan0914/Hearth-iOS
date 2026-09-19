@@ -29,6 +29,10 @@ struct HearthApp: App {
                     }
                     await session.restore()
                     await notifications.refreshStatus()
+                    // The second of two ask sites: a stored session also signs in
+                    // on launch without going through the change below. Both need
+                    // the demo guard, or the alert lands on the capture anyway.
+                    guard !Self.suppressPermissionPrompt else { return }
                     if session.isSignedIn { notifications.requestAuthorization() }
                 }
                 .onChange(of: session.isSignedIn) { signedIn in
@@ -37,13 +41,7 @@ struct HearthApp: App {
                     // only moment the prompt gets a fair hearing. iOS only asks
                     // once.
                     guard signedIn else { return }
-                    #if DEBUG
-                    // The screenshot run signs in twice -- once when `restore`
-                    // seeds the demo session, once when it publishes the state --
-                    // and a system permission alert lands on top of the first
-                    // screen either way. Suppressed so the captures show the app.
-                    if DemoMode.isEnabled { return }
-                    #endif
+                    guard !Self.suppressPermissionPrompt else { return }
                     notifications.requestAuthorization()
                     if let token = deviceToken {
                         Task { await registerDevice(token) }
@@ -79,6 +77,21 @@ struct HearthApp: App {
             // retry on the next launch.
             print("[Hearth] device registration failed: \(error.localizedDescription)")
         }
+    }
+
+    /// True only in the screenshot build.
+    ///
+    /// The run signs in twice -- once when `restore` seeds the demo session,
+    /// once when it publishes the state -- and there are two `requestAuthorization`
+    /// sites to match. A system alert over the first screen would land on the
+    /// capture, and the prompt is one-shot per install, so the run would also
+    /// spend it on a screen nobody sees.
+    private static var suppressPermissionPrompt: Bool {
+        #if DEBUG
+        return DemoMode.isEnabled
+        #else
+        return false
+        #endif
     }
 
     /// Must match the entitlement the build was signed with, not the build
