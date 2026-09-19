@@ -173,8 +173,14 @@ final class PurchaseStore: ObservableObject {
             // The raw JWS, not the decoded fields: the server re-derives
             // everything from the signed payload, and a decoded copy would just
             // be the client's word for it.
-            guard let jws = transaction.jwsRepresentation as String?,
-                  !jws.isEmpty else {
+            //
+            // Read off the *result*, not the transaction. `jwsRepresentation`
+            // is a member of `VerificationResult`, which is what carries the
+            // signature; `Transaction` exposes only `jsonRepresentation` and
+            // sending that would hand the server an unsigned blob it is
+            // right to reject.
+            let jws = result.jwsRepresentation
+            guard !jws.isEmpty else {
                 message = "The App Store did not return a verifiable receipt."
                 return false
             }
