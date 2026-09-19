@@ -1,0 +1,63 @@
+name: Release Hearth
+
+# Submit a build for App Store review.
+#
+# This is the only workflow that talks to App Store review, and it is manual on
+# purpose. Everything before it -- the IPA, the screenshots, the store listing --
+# can be redone. A submission cannot be quietly undone: it puts the app in front
+# of a reviewer, and pulling it back is an explicit withdrawal that resets the
+# queue position.
+#
+# ── Why the subscriptions are attached here and not left to the web UI ──────
+#
+# Apple requires the app's first auto-renewable subscription to be submitted
+# *with* an app version. Create the subscription in App Store Connect and leave
+# it out of the submission and it sits in "Ready to Submit" forever; the version
+# goes to review without it and is rejected for a missing in-app purchase, or
+# ships with a paywall whose products do not exist yet. Either way the build is
+# burned and the next one is a new upload.
+#
+# So this workflow does not merely push a version. It creates a review
+# submission containing the version AND every subscription and non-consumable
+# IAP that is ready, then submits. One submission, one review, one decision.
+#
+# Run with: gh workflow run release.yml -f build_number=123
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: 'TestFlight build number to submit (CURRENT_PROJECT_VERSION)'
+        required: true
+      dry_run:
+        description: 'Report what would be submitted, change nothing'
+        type: boolean
+        default: true
+
+jobs:
+  submit:
+    name: Submit for review
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python dependencies
+        run: python3 -m pip install --quiet "PyJWT[crypto]" httpx
+
+      - name: Report what would be submitted
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+        run: |
+          python3 tools/asc_release.py --build "${{ github.event.inputs.build_number }}" --inspect
+
+      - name: Submit
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+        run: |
+          python3 tools/asc_release.py --build "${{ github.event.inputs.build_number }}" --submit
