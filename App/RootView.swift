@@ -35,7 +35,30 @@ struct MainTabView: View {
     @State private var showScan = false
     @State private var unread = 0
 
-    enum Tab: Hashable { case today, assets, recalls, settings }
+    /// The screenshot job cannot tap, so the tab it wants and the sheet it wants
+    /// are chosen before the first frame. Everything below this is the ordinary
+    /// app.
+    init() {
+        #if DEBUG
+        if DemoMode.isEnabled {
+            _selection = State(initialValue: Tab(index: DemoMode.initialTab))
+            _showScan = State(initialValue: DemoMode.opensScanOnLaunch)
+        }
+        #endif
+    }
+
+    enum Tab: Hashable {
+        case today, assets, recalls, settings
+
+        init(index: Int) {
+            switch index {
+            case 1: self = .assets
+            case 2: self = .recalls
+            case 3: self = .settings
+            default: self = .today
+            }
+        }
+    }
 
     var body: some View {
         TabView(selection: $selection) {

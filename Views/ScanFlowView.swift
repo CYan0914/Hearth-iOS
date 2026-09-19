@@ -78,6 +78,27 @@ struct ScanFlowView: View {
             }
         }
         .interactiveDismissDisabled(step == .creating)
+        .task {
+            #if DEBUG
+            // The screenshot build cannot reach the camera, so it supplies the
+            // photo and runs the same classification the real flow does. OCR is
+            // skipped: `sampleNameplate()` is drawn, not photographed, and Vision
+            // would only add a way for the run to fail without changing what the
+            // screenshot shows.
+            guard DemoMode.opensScanOnLaunch, step == .capture else { return }
+            image = DemoMode.sampleNameplate()
+            step = .reading
+            do {
+                let result = try await HearthAPI.classify(ocrText: DemoMode.sampleOCRText)
+                scan = result
+                draft = AssetDraft(from: result, ocrText: DemoMode.sampleOCRText)
+                step = .confirm
+            } catch {
+                self.error = error.localizedDescription
+                step = .capture
+            }
+            #endif
+        }
     }
 
     private var title: String {

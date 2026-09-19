@@ -37,6 +37,13 @@ struct HearthApp: App {
                     // only moment the prompt gets a fair hearing. iOS only asks
                     // once.
                     guard signedIn else { return }
+                    #if DEBUG
+                    // The screenshot run signs in twice -- once when `restore`
+                    // seeds the demo session, once when it publishes the state --
+                    // and a system permission alert lands on top of the first
+                    // screen either way. Suppressed so the captures show the app.
+                    if DemoMode.isEnabled { return }
+                    #endif
                     notifications.requestAuthorization()
                     if let token = deviceToken {
                         Task { await registerDevice(token) }

@@ -58,7 +58,10 @@ enum HearthAPI {
     }
 
     static func me() async throws -> MeResponse {
-        try await APIClient.shared.get("/me")
+        #if DEBUG
+        if DemoMode.isEnabled { return DemoMode.me() }
+        #endif
+        return try await APIClient.shared.get("/me")
     }
 
     static func updateProfile(_ body: Profile) async throws -> UserEnvelope {
@@ -102,7 +105,10 @@ enum HearthAPI {
         hintCategory: String? = nil,
         hintBrand: String? = nil
     ) async throws -> ScanResult {
-        try await APIClient.shared.post(
+        #if DEBUG
+        if DemoMode.isEnabled { return DemoMode.classify(hintCategory: hintCategory) }
+        #endif
+        return try await APIClient.shared.post(
             "/scan/classify",
             body: ScanRequest(
                 ocrText: ocrText,
@@ -114,7 +120,10 @@ enum HearthAPI {
     }
 
     static func categories() async throws -> CategoriesResponse {
-        try await APIClient.shared.get("/categories")
+        #if DEBUG
+        if DemoMode.isEnabled { return DemoMode.categories() }
+        #endif
+        return try await APIClient.shared.get("/categories")
     }
 
     // MARK: - Assets
@@ -217,7 +226,10 @@ enum HearthAPI {
     /// would not fail, it would quietly return only the active assets and look
     /// like the archived ones had been deleted.
     static func assets(status: String = "active") async throws -> AssetListResponse {
-        try await APIClient.shared.get("/assets", query: ["status": status])
+        #if DEBUG
+        if DemoMode.isEnabled { return DemoMode.assets(status: status) }
+        #endif
+        return try await APIClient.shared.get("/assets", query: ["status": status])
     }
 
     static func createAsset(_ body: AssetCreate) async throws -> AssetCreateResponse {
@@ -225,7 +237,10 @@ enum HearthAPI {
     }
 
     static func asset(_ id: String) async throws -> AssetDetailResponse {
-        try await APIClient.shared.get("/assets/\(id)")
+        #if DEBUG
+        if DemoMode.isEnabled { return DemoMode.asset(id) }
+        #endif
+        return try await APIClient.shared.get("/assets/\(id)")
     }
 
     /// Returns the schedule the edit produced, not the plan list. Changing the
@@ -287,7 +302,10 @@ enum HearthAPI {
     }
 
     static func photos(assetId: String) async throws -> PhotoListResponse {
-        try await APIClient.shared.get("/assets/\(assetId)/photos")
+        #if DEBUG
+        if DemoMode.isEnabled { return DemoMode.photos(assetId: assetId) }
+        #endif
+        return try await APIClient.shared.get("/assets/\(assetId)/photos")
     }
 
     static func deletePhoto(_ id: String) async throws -> Ack {
@@ -316,14 +334,22 @@ enum HearthAPI {
     }
 
     static func tasks(assetId: String? = nil, status: String? = nil) async throws -> TaskListResponse {
-        try await APIClient.shared.get("/tasks", query: [
+        #if DEBUG
+        if DemoMode.isEnabled, let assetId {
+            return DemoMode.tasks(assetId: assetId, status: status)
+        }
+        #endif
+        return try await APIClient.shared.get("/tasks", query: [
             "asset_id": assetId,
             "status": status,
         ])
     }
 
     static func upcoming() async throws -> UpcomingResponse {
-        try await APIClient.shared.get("/tasks/upcoming")
+        #if DEBUG
+        if DemoMode.isEnabled { return DemoMode.upcoming() }
+        #endif
+        return try await APIClient.shared.get("/tasks/upcoming")
     }
 
     static func completeTask(_ id: String, _ body: TaskAction) async throws -> TaskActionResponse {
@@ -361,7 +387,13 @@ enum HearthAPI {
     }
 
     static func plans(assetId: String? = nil) async throws -> PlanListResponse {
-        try await APIClient.shared.get("/plans", query: ["asset_id": assetId])
+        #if DEBUG
+        if DemoMode.isEnabled, let assetId {
+            let plans = DemoMode.asset(assetId).plans
+            return PlanListResponse(plans: plans, count: plans.count)
+        }
+        #endif
+        return try await APIClient.shared.get("/plans", query: ["asset_id": assetId])
     }
 
     static func createPlan(_ body: PlanCreate) async throws -> PlanEnvelope {
@@ -397,7 +429,10 @@ enum HearthAPI {
     }
 
     static func logs(assetId: String) async throws -> LogListResponse {
-        try await APIClient.shared.get("/assets/\(assetId)/logs")
+        #if DEBUG
+        if DemoMode.isEnabled { return DemoMode.logs(assetId: assetId) }
+        #endif
+        return try await APIClient.shared.get("/assets/\(assetId)/logs")
     }
 
     /// The edit body, which is not `LogCreate`.
@@ -463,7 +498,10 @@ enum HearthAPI {
         assetId: String? = nil,
         includeLow: Bool = true
     ) async throws -> RecallMatchListResponse {
-        try await APIClient.shared.get("/recalls/matches", query: [
+        #if DEBUG
+        if DemoMode.isEnabled { return DemoMode.recallMatches(state: state) }
+        #endif
+        return try await APIClient.shared.get("/recalls/matches", query: [
             "state": state,
             "asset_id": assetId,
             "include_low": includeLow ? nil : "false",
@@ -475,7 +513,10 @@ enum HearthAPI {
     }
 
     static func searchRecalls(_ q: String) async throws -> RecallSearchResponse {
-        try await APIClient.shared.get("/recalls/search", query: ["q": q])
+        #if DEBUG
+        if DemoMode.isEnabled { return DemoMode.searchRecalls(q) }
+        #endif
+        return try await APIClient.shared.get("/recalls/search", query: ["q": q])
     }
 
     private struct MatchState: Encodable { let state: String }

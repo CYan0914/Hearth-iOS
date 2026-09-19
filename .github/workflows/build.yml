@@ -15,6 +15,11 @@ on:
         required: false
         default: false
         type: boolean
+      screenshots:
+        description: 'Capture App Store screenshots (6.9" iPhone + 13" iPad)'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
 
@@ -26,7 +31,9 @@ jobs:
   # ─── Compile check (the default, and what every push runs) ──────────────
   build:
     name: Build for iOS Simulator
-    if: github.event_name == 'push' || github.event.inputs.create_ipa != 'true'
+    if: |
+      github.event_name == 'push' ||
+      (github.event.inputs.create_ipa != 'true' && github.event.inputs.screenshots != 'true')
     runs-on: macos-latest
 
     steps:
@@ -391,3 +398,217 @@ jobs:
             --apiIssuer "$APPSTORE_ISSUER_ID" \
             --type ios \
             --verbose 2>&1
+
+  # ─── App Store screenshots (manual, screenshots=true) ─────────────────────
+  #
+  # App Store Connect wants a 6.9" iPhone set and a 13" iPad set. This project
+  # is developed on a Windows machine with no Xcode, and the only machine that
+  # can run the app is a runner: no camera, no photo library, no way to complete
+  # Sign in with Apple. So the app is launched with `-HearthDemo`, which seeds a
+  # fixture session from memory, and `-HearthDemoScreen`, which picks the screen
+  # it opens on. Both live in Services/DemoMode.swift, entirely inside `#if
+  # DEBUG`, so nothing in it compiles into the Release build that ships.
+  #
+  # This job does not sign, does not upload, and touches nothing the other two
+  # jobs produce. It just leaves PNGs as an artifact.
+  screenshots:
+    name: Capture App Store screenshots
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.screenshots == 'true'
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (26+ required for App Store uploads)
+        run: |
+          echo "=== Available Xcode ==="
+          ls -d /Applications/Xcode*.app 2>/dev/null || echo "(none found)"
+          for xc in /Applications/Xcode*.app; do
+            if sudo xcode-select -s "$xc/Contents/Developer" 2>/dev/null; then
+              sdk=$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || echo "unknown")
+              echo "  $xc -> iOS SDK $sdk"
+              if [[ "$sdk" == 2[6-9].* ]] || [[ "$sdk" == [3-9]* ]]; then
+                echo "Selected: $xc (iOS SDK $sdk)"
+                xcodebuild -version
+                exit 0
+              fi
+            fi
+          done
+          echo "No Xcode with SDK 26+ found -- falling back"
+          xcodebuild -version
+
+      - name: Install xcodegen
+        run: |
+          brew install xcodegen 2>/dev/null || brew upgrade xcodegen 2>/dev/null
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: |
+          rm -rf Hearth.xcodeproj
+          xcodegen generate
+
+      - name: Ensure the iOS platform is installed
+        run: |
+          sudo xcodebuild -license accept 2>&1 || true
+          sudo xcodebuild -runFirstLaunch 2>&1 || true
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            sudo xcodebuild -downloadPlatform iOS -quiet 2>&1 && break
+            echo "Attempt $i failed, sleeping 10s..."
+            sleep 10
+          done
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version || echo "iphoneos SDK not found"
+
+      - name: Build for Simulator (Debug)
+        run: |
+          # Debug, not Release: `-HearthDemo` and everything it needs are inside
+          # `#if DEBUG`. A Release build here would launch straight to the
+          # sign-in screen and produce five identical useless PNGs.
+          #
+          # Output goes to a file rather than straight through xcpretty, for the
+          # same reason as the compile-check job: xcpretty drops the body of tool
+          # errors, and the body is the only part worth reading.
+          set +e
+          xcodebuild build \
+            -project Hearth.xcodeproj \
+            -scheme Hearth \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            > build.log 2>&1
+          status=$?
+          set -e
+
+          if [ $status -ne 0 ]; then
+            echo "::group::errors"
+            grep -nE "error:|error :|fatal" build.log | head -60 || true
+            echo "::endgroup::"
+            tail -100 build.log
+            exit $status
+          fi
+          tail -5 build.log
+
+      - name: Capture screenshots
+        run: |
+          set -euo pipefail
+
+          BUNDLE_ID=com.cyan0914.hearth
+          APP="build/Build/Products/Debug-iphonesimulator/Hearth.app"
+          [ -d "$APP" ] || { echo "::error::No app at $APP"; exit 1; }
+
+          command -v jq >/dev/null || brew install jq >/dev/null
+
+          # Device *names* are stable across Xcode releases; UDIDs are not, and
+          # the runtime suffix is not either. So: newest iOS runtime first, then
+          # the first device whose name matches the pattern. jq's `[..][0]` is
+          # used instead of `head -1` so nothing in the pipeline gets SIGPIPE,
+          # which `pipefail` would turn into a failure.
+          devices=$(xcrun simctl list devices available -j)
+          pick() {
+            printf '%s' "$devices" | jq -r --arg p "$1" '
+              [ .devices | to_entries[] | select(.key | test("SimRuntime.iOS-")) ]
+              | sort_by(.key) | reverse
+              | [ .[].value[] | select(.name | test($p)) ][0].udid // empty'
+          }
+
+          PHONE=$(pick '^iPhone 1[0-9] Pro Max$')
+          if [ -z "$PHONE" ]; then
+            echo "No 'iPhone <n> Pro Max'; falling back to any Pro Max."
+            PHONE=$(pick 'iPhone.*Pro Max')
+          fi
+          TABLET=$(pick '^iPad Pro 13-inch')
+          if [ -z "$TABLET" ]; then
+            echo "No 'iPad Pro 13-inch'; falling back to any 12.9-inch."
+            TABLET=$(pick '^iPad Pro 12.9-inch')
+          fi
+          if [ -z "$PHONE" ] || [ -z "$TABLET" ]; then
+            echo "::error::Could not find the simulators. Available:"
+            xcrun simctl list devices available | sed -n '1,80p'
+            exit 1
+          fi
+          echo "iPhone: $PHONE"
+          echo "iPad:   $TABLET"
+
+          # Capture order is gallery order. Today first, because the chore list
+          # with something overdue in it is the product in one glance; the scan
+          # confirm third, because "3 tasks scheduled" is the moment the app
+          # makes its promise.
+          SCREENS=(today detail scan assets recalls)
+
+          capture() {
+            local udid="$1" dir="$2" label="$3"
+            mkdir -p "$dir"
+
+            xcrun simctl bootstatus "$udid" -b
+
+            # The status bar is overridden because a runner's clock reads like a
+            # runner's clock, and every App Store screenshot set since 2008 has
+            # said 9:41 for a reason.
+            xcrun simctl status_bar "$udid" override \
+              --time "9:41" --batteryState charged --batteryLevel 100 \
+              --cellularBars 4 --wifiBars 3 2>/dev/null || true
+
+            local n=0
+            for screen in "${SCREENS[@]}"; do
+              n=$((n + 1))
+              local out
+              out=$(printf '%s/%02d-%s.png' "$dir" "$n" "$screen")
+
+              xcrun simctl install "$udid" "$APP"
+              xcrun simctl launch "$udid" "$BUNDLE_ID" \
+                -HearthDemo -HearthDemoScreen "$screen"
+              # A fixed wait rather than a poll: there is nothing to poll. The
+              # demo answers from memory, so the screens render in well under a
+              # second and the rest of this is launch and first-frame time.
+              sleep 6
+
+              xcrun simctl io "$udid" screenshot "$out"
+              xcrun simctl terminate "$udid" "$BUNDLE_ID" 2>/dev/null || true
+
+              # App Store Connect decides a screenshot's display type from its
+              # pixel dimensions and rejects anything it does not recognise. A
+              # wrong-sized PNG found here costs one re-run; found at upload time
+              # it costs a failed submission.
+              local w h actual
+              w=$(sips -g pixelWidth "$out" | awk '/pixelWidth/{print $2}')
+              h=$(sips -g pixelHeight "$out" | awk '/pixelHeight/{print $2}')
+              actual="${w}x${h}"
+              # Matched with a bash case rather than `printf | grep -q`, which
+              # is a race: grep exits at the first match, printf can take
+              # SIGPIPE, and `pipefail` turns that into a failed step.
+              case "$label" in
+                iphone69) allowed="1320x2868 1290x2796" ;;
+                ipad13)   allowed="2064x2752 2048x2732" ;;
+              esac
+              case " $allowed " in
+                *" $actual "*) ;;
+                *)
+                  echo "::error::$out is $actual, which is not one of: $allowed"
+                  exit 1
+                  ;;
+              esac
+              echo "  $out  $actual"
+            done
+
+            xcrun simctl status_bar "$udid" clear 2>/dev/null || true
+          }
+
+          capture "$PHONE"  shots/iphone69 iphone69
+          capture "$TABLET" shots/ipad13   ipad13
+
+          echo "=== captured ==="
+          find shots -name '*.png' | sort
+          find shots -name '*.png' -exec du -h {} \;
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: hearth-screenshots
+          path: shots/
+          retention-days: 30

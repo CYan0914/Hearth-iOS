@@ -65,6 +65,22 @@ final class SessionStore: ObservableObject {
     /// Called once at launch. Distinguishes "no token" from "token but the
     /// server is unreachable", because only the first should show sign-in.
     func restore() async {
+        #if DEBUG
+        // The screenshot build has no keychain entry and no token to validate,
+        // so it seeds the session directly. Routed through the same `apply` and
+        // `loadCategories` the real path uses, so the screens it produces are
+        // built from the same state a signed-in user would have.
+        if DemoMode.isEnabled {
+            do {
+                apply(try await HearthAPI.me())
+                await loadCategories()
+            } catch {
+                startupError = error.localizedDescription
+                state = .signedOut
+            }
+            return
+        }
+        #endif
         guard Keychain.sessionToken() != nil else {
             state = .signedOut
             return

@@ -17,9 +17,10 @@ struct AssetsView: View {
     @State private var showAdd = false
     @State private var archiving: Asset?
     @State private var pendingDelete: Asset?
+    @State private var path: [String] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if isLoading && assets.isEmpty {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -33,7 +34,17 @@ struct AssetsView: View {
             .navigationTitle("My Home")
             .searchable(text: $search, prompt: "Name, brand or model")
             .refreshable { await load() }
-            .task { await load() }
+            .task {
+                await load()
+                #if DEBUG
+                // The screenshot build pushes an asset without a tap. Done after
+                // the list loads so there is a list behind it to pop back to.
+                if let id = DemoMode.autoOpenedAssetId { path = [id] }
+                #endif
+            }
+            .navigationDestination(for: String.self) { id in
+                AssetDetailView(assetId: id, onChanged: { Task { await load() } })
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
@@ -88,9 +99,7 @@ struct AssetsView: View {
             }
 
             ForEach(filtered) { asset in
-                NavigationLink {
-                    AssetDetailView(assetId: asset.id, onChanged: { Task { await load() } })
-                } label: {
+                NavigationLink(value: asset.id) {
                     AssetRow(asset: asset)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
