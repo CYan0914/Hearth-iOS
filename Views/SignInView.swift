@@ -14,6 +14,10 @@ struct SignInView: View {
     @State private var isWorking = false
     @State private var error: String?
 
+    /// Drives the button's style. See `signInButton` for why the style is not a
+    /// constant.
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
@@ -80,9 +84,15 @@ struct SignInView: View {
         .background(Color(.systemGroupedBackground))
     }
 
-    /// Apple's own button, wired to both halves of the exchange. Its appearance
-    /// is not customisable by design -- the logo, wording and corner radius are
-    /// required -- so there is nothing here but the two callbacks.
+    /// Apple's own button, wired to both halves of the exchange.
+    ///
+    /// The style is `.black` or `.white` -- the two Apple provides -- chosen
+    /// against the current colour scheme, because the background here is
+    /// `systemGroupedBackground` and that is near-black in dark mode. A fixed
+    /// `.black` therefore had no visible edge at all in dark mode: the button
+    /// dissolved into the page and only its white wordmark floated, reading as
+    /// a caption rather than something tappable. App Review said exactly that
+    /// (Guideline 4, September 2026), so the style now tracks the scheme.
     private var signInButton: some View {
         SignInWithAppleButton(.signIn) { request in
             coordinator.prepare(request)
@@ -102,13 +112,16 @@ struct SignInView: View {
                 }
             }
         }
-        .signInWithAppleButtonStyle(.black)
+        .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
         .frame(height: 50)
         .disabled(isWorking)
         .opacity(isWorking ? 0.55 : 1)
         .overlay {
             if isWorking {
-                ProgressView().tint(.white)
+                // Inverted against the button, which is itself inverted
+                // against the page -- so the spinner stays visible in both
+                // schemes.
+                ProgressView().tint(colorScheme == .dark ? .black : .white)
             }
         }
         .padding(.horizontal, 28)

@@ -264,10 +264,22 @@ struct SettingsView: View {
 
     // MARK: - Danger zone
 
+    /// The way out, in two flavours.
+    ///
+    /// Both rows sit under a header like every other section here. They used to
+    /// be a bare pair of buttons at the foot of the form, which reads as an
+    /// appendix rather than as the account controls -- and an account-deletion
+    /// row that a reviewer cannot find is its own App Review problem
+    /// (Guideline 5.1.1(v), September 2026). The footer says where the deletion
+    /// happens, because that is the first thing the guideline asks about.
     private var dangerZone: some View {
         Section {
             Button("Sign out") { confirmSignOut = true }
             Button("Delete my account", role: .destructive) { showDeleteAccount = true }
+        } header: {
+            Text("Account")
+        } footer: {
+            Text("Deleting your account happens here in the app and takes effect immediately. There is no email to send and no website to visit.")
         }
     }
 
@@ -451,9 +463,17 @@ struct DeleteAccountView: View {
     ///
     /// False means the local account is gone but the server could not reach
     /// Apple to revoke the grant -- so Hearth still appears under Settings >
-    /// Apple ID, and the user has to remove it there. Reporting that as a
+    /// Apple ID, and the user may want to remove it there. Reporting that as a
     /// silent success would leave them believing a removal that did not fully
     /// happen, and it is not an error they caused, so it is not shown as one.
+    ///
+    /// What it must not do is read as a step of the deletion. That section's
+    /// heading was literally "One more step" until App Review cited Guideline
+    /// 5.1.1(v) in September 2026; the guideline is entirely about deletions
+    /// that demand extra work, so a heading saying the opposite -- on a screen
+    /// that only appears once the account is already gone -- was an argument
+    /// worth not having. The wording now leads with the fact that the deletion
+    /// is finished and calls the Apple ID cleanup optional.
     private func deleted(_ response: AccountDeleteResponse) -> some View {
         Group {
             Section {
@@ -463,11 +483,11 @@ struct DeleteAccountView: View {
 
             if !response.appleRevoked {
                 Section {
-                    Text("One thing is left to you. Apple would not confirm the sign-in was revoked, so Hearth may still be listed under Settings > Apple ID on this iPhone. Opening that screen and choosing \"Stop Using Apple ID\" removes it.")
+                    Text("Your Hearth account and all of its data are gone. This part is only about Apple's sign-in list: Apple did not confirm the sign-in was revoked, so Hearth may still appear under Settings > Apple ID on this iPhone. Removing it there is optional and changes nothing about the deletion.")
                         .font(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)
                 } header: {
-                    Text("One more step")
+                    Text("About your Apple ID")
                 }
             }
         }
