@@ -22,6 +22,11 @@ struct SettingsView: View {
     @State private var isSaving = false
     @State private var error: String?
 
+    /// The name field is the only text entry on this screen, so one flag covers
+    /// it. It drives the keyboard's Done button and lets Save drop the keyboard
+    /// in the same tap, rather than leaving it up over a form that is done.
+    @FocusState private var isEditingName: Bool
+
     @State private var confirmSignOut = false
     @State private var showDeleteAccount = false
     @State private var showPaywall = false
@@ -47,8 +52,17 @@ struct SettingsView: View {
             .task { await load() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await save() } }
-                        .disabled(isSaving || !hasChanges)
+                    Button("Save") {
+                        // Save is the end of the edit, so the keyboard goes with
+                        // it. Left up, it covers the section the user just saved.
+                        isEditingName = false
+                        Task { await save() }
+                    }
+                    .disabled(isSaving || !hasChanges)
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { isEditingName = false }
                 }
             }
             .alert("Sign out?", isPresented: $confirmSignOut) {
@@ -79,6 +93,7 @@ struct SettingsView: View {
         Section {
             TextField("Your name", text: $displayName)
                 .textInputAutocapitalization(.words)
+                .focused($isEditingName)
         } header: {
             Text("You")
         } footer: {
