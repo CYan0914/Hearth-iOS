@@ -12,7 +12,12 @@ settings:
     SWIFT_VERSION: "5.9"
     ALWAYS_SEARCH_USER_PATHS: NO
     DEVELOPMENT_TEAM: H4VQ9X6KYK
-    MARKETING_VERSION: "1.0"
+    # 1.0.2, not 1.0.1. The approved binary (build 30) declares 1.0 in its
+    # Info.plist even though App Store Connect filed it under a 1.0.1 version
+    # record, and Apple compares a new upload against the binary's own string
+    # -- so the 1.0 train is closed. 1.0.1 would also collide with the record
+    # that is already for sale. Bump this every time a version goes live.
+    MARKETING_VERSION: "1.0.2"
     CURRENT_PROJECT_VERSION: "1"
     TARGETED_DEVICE_FAMILY: "1,2"
     # No INFOPLIST_KEY_* settings here on purpose. They only merge into a
