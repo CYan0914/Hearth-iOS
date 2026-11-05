@@ -79,6 +79,12 @@ struct SignInView: View {
                     .padding(.top, 16)
                     .padding(.bottom, 28)
             }
+            // 展开态限宽。这里原来只有 `.frame(maxWidth: .infinity)` —— 那是
+            // 撑满而不是限宽，很容易被当成「已经处理过了」。iPhone Duo 展开态
+            // 内屏约 1000pt，隐私说明那一段会被拉成一整行。560 是阅读宽度上限；
+            // 第二个 `.frame(maxWidth: .infinity)` 负责限宽之后把它居中。
+            // 折叠态可用宽本就不到 560，行为与改前逐像素相同。
+            .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
         }
         .background(Color(.systemGroupedBackground))

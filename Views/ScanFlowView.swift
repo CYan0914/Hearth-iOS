@@ -360,12 +360,21 @@ private struct ConfirmStep: View {
         ScrollView {
             VStack(spacing: 16) {
                 if let image {
+                    // 预览照片：`.scaledToFit` + 高度上限，两端都不裁切。
+                    //
+                    // 原来是 `.scaledToFill()` + `.frame(height: 150)` + `.clipped()`：
+                    // 高度锁死、宽度铺满，所以裁切量 = 宽度 / 高度。折叠态约 390/150
+                    // （2.6:1），iPhone Duo 展开态约 1000/150（6.7:1）—— 用户刚拍的名牌
+                    // 左右会被切掉一大半，而这是全 App 唯一的确认凭据。Apple 的
+                    // iPhone Duo prepare 页把这类「全出血媒体」点名列为坏模式。
+                    //
+                    // 现在由高度上限主导：折叠态与展开态都得到同样尺寸的完整照片，
+                    // 不再有随屏宽增长的裁切。
                     Image(uiImage: image)
                         .resizable()
-                        .scaledToFill()
-                        .frame(height: 150)
+                        .scaledToFit()
                         .frame(maxWidth: .infinity)
-                        .clipped()
+                        .frame(maxHeight: 260)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
                 }
 

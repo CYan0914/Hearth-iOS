@@ -82,7 +82,22 @@ struct MainTabView: View {
             // The scan button floats over every tab: photographing a nameplate
             // is the app's one irreplaceable action, and putting it behind a tab
             // or a nav bar menu would be the wrong trade.
-            scanButton
+            //
+            // iPhone Duo 展开态：状态栏移到**右边缘并变竖直**，固定的
+            // `.padding(.trailing, 20)` 会把按钮压到状态栏下面。这里改成读窗口自己的
+            // safe area —— 折叠态 trailing inset 是 0，`max(20, 12)` 仍是 20，与原来
+            // 逐像素一致；展开态自动内移。
+            //
+            // `.ignoresSafeArea()` 是必须的：不加的话 overlay 内容已被裁进 safe area，
+            // GeometryReader 读到的 insets 全是 0。按钮自身另有 76pt 底部留白，
+            // 远大于 home indicator 区，不会掉到屏幕外。
+            GeometryReader { proxy in
+                scanButton
+                    .padding(.trailing, max(20, proxy.safeAreaInsets.trailing + 12))
+                    .padding(.bottom, 76)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            }
+            .ignoresSafeArea()
         }
         .sheet(isPresented: $showScan) {
             ScanFlowView()

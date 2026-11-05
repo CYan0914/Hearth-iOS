@@ -36,6 +36,12 @@ struct PaywallView: View {
                     footer
                 }
                 .padding(20)
+                // 展开态限宽：`footer` 的 disclosure 与 `benefits` 的说明是整段
+                // 长句，铺满 iPhone Duo 内屏（约 1000pt）会拉成一整行。
+                // 第二个 `.frame(maxWidth: .infinity)` 负责限宽后居中。
+                // 折叠态可用宽本就不到 560，行为与改前逐像素相同。
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Hearth Pro")

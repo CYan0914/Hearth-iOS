@@ -67,6 +67,9 @@ struct ReportsView: View {
                 footnote
             }
             .padding(20)
+            // 展开态限宽：`formatRow` 的说明与 `footnote` 是整段文字，同 PaywallView。
+            .frame(maxWidth: 560)
+            .frame(maxWidth: .infinity)
         }
     }
 
