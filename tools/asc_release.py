@@ -60,7 +60,12 @@ SUBMITTABLE_STATES = {"PREPARE_FOR_SUBMISSION", "READY_FOR_REVIEW",
 # means the product is complete and waiting only for a version to ride with.
 # MISSING_METADATA deliberately falls through to a warning rather than being
 # silently included, because Apple will reject the whole submission for it.
-ATTACHABLE_STATES = {"READY_TO_SUBMIT", "WAITING_FOR_REVIEW", "APPROVED"}
+#
+# APPROVED is deliberately absent. It reads like "good to go" but means the
+# product already passed review and is on sale -- Apple answers 409
+# STATE_ERROR.ENTITY_STATE_INVALID if you try to attach it to a new submission,
+# and every release after the first one hits this for the whole catalogue.
+ATTACHABLE_STATES = {"READY_TO_SUBMIT", "WAITING_FOR_REVIEW"}
 
 
 def b64(raw: bytes) -> str:
