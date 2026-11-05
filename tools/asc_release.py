@@ -282,10 +282,11 @@ def main() -> int:
         return ident in have_ids.get(kind, set())
 
     def add(payload: dict, label: str) -> bool:
-        _, st = api("POST", "/reviewSubmissionItems", {"data": payload})
-        print(f"  {'added' if st // 100 == 2 else 'FAILED'}  {label}"
-              + ("" if st // 100 == 2 else f"  ({st})"))
-        return st // 100 == 2
+        resp, st = api("POST", "/reviewSubmissionItems", {"data": payload})
+        ok = st // 100 == 2
+        print(f"  {'added' if ok else 'FAILED'}  {label}"
+              + ("" if ok else f"  ({st}) {resp.get('error', '')}"))
+        return ok
 
     added = 0
     if not already("appStoreVersion", ver_id):
@@ -316,15 +317,25 @@ def main() -> int:
 
     for item in non_consumables:
         a = item["attributes"]
-        # No version entity here: `inAppPurchasesV2` is itself the thing that
-        # goes to review, which is why the id can be attached directly and the
-        # subscriptions above cannot.
-        if a.get("state") not in ATTACHABLE_STATES or already("inAppPurchaseV2", item["id"]):
+        if a.get("state") not in ATTACHABLE_STATES:
             continue
-        added += add({"type": "reviewSubmissionItems", "relationships": {
-            "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sub_id}},
-            "inAppPurchaseV2": {"data": {"type": "inAppPurchases", "id": item["id"]}},
-        }}, a.get("productId", item["id"]))
+        # A non-consumable has a version entity too, and it is the version --
+        # not the product -- that a submission item carries. The relationship is
+        # `inAppPurchaseVersion`; `inAppPurchaseV2` is not a relationship on
+        # reviewSubmissionItems at all and Apple answers 409
+        # ENTITY_ERROR.RELATIONSHIP.UNKNOWN for it. The product's own id is not
+        # the version's id either, so the version has to be fetched.
+        versions, _ = api("GET", f"/v2/inAppPurchases/{item['id']}/versions?limit=10")
+        for version in versions.get("data") or []:
+            if already("inAppPurchaseVersion", version["id"]):
+                continue
+            label = f"{a.get('productId', item['id'])} v{version['attributes'].get('version')}"
+            added += add({"type": "reviewSubmissionItems", "relationships": {
+                "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sub_id}},
+                "inAppPurchaseVersion": {
+                    "data": {"type": "inAppPurchaseVersions", "id": version["id"]},
+                },
+            }}, label)
 
     print(f"\n{added} item(s) added to submission {sub_id}")
 
