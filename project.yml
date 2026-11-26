@@ -56,6 +56,12 @@ targets:
           - "上架材料/"
           - "ExportOptions.plist"
           - "Resources/Hearth.entitlements"
+          # App Store Connect tooling, not app content. -- path: . sweeps the
+          # whole checkout, so without this the scripts land in the bundle as
+          # resources; build 45 was archived with asc_release.py, asc_fill_
+          # sub_prices.py and asc_sub_review_shot.py inside Hearth.app.
+          - "tools/"
+          - "**/__pycache__/"
     settings:
       base:
         PRODUCT_NAME: Hearth
