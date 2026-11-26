@@ -285,6 +285,16 @@ jobs:
           BUILD_NUM=${{ github.run_number }}
           echo "Using build number $BUILD_NUM"
 
+          # What the scheme can actually build, printed before the archive
+          # runs. If a future dependency again narrows the destination set,
+          # this says so in one line instead of leaving a red run where the
+          # only clue is "Found no destinations".
+          echo "=== schemes and targets ==="
+          xcodebuild -list -project Hearth.xcodeproj 2>&1 | head -30 || true
+          echo "=== destinations for scheme Hearth ==="
+          xcodebuild -showdestinations -project Hearth.xcodeproj \
+            -scheme Hearth 2>&1 | head -40 || true
+
           # No -allowProvisioningUpdates and no -authenticationKey*: those exist
           # to let Xcode talk to App Store Connect and create things, which is
           # the path that is forbidden above. Manual signing already has
@@ -308,11 +318,18 @@ jobs:
           # project.yml declares PROVISIONING_PROFILE_SPECIFIER as
           # $(HEARTH_DIST_PROFILE_SPECIFIER), so it arrives here as an
           # environment-backed build setting, target-scoped to Hearth.
+          # -destination rather than relying on -sdk alone. With a Swift
+          # Package dependency in the graph, xcodebuild's implicit destination
+          # resolution for the archive action comes back empty and it aborts
+          # with "Found no destinations for the scheme ... and action archive"
+          # -- after successfully resolving the package, which is what made the
+          # failure look like a project problem. generic/platform=iOS is the
+          # explicit form of what the implicit path was meant to pick.
           xcodebuild archive \
             -project Hearth.xcodeproj \
             -scheme Hearth \
             -configuration Release \
-            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -archivePath Hearth.xcarchive \
             HEARTH_DIST_PROFILE_SPECIFIER="$DIST_PROFILE_SPECIFIER" \
             DEVELOPMENT_TEAM=H4VQ9X6KYK \
