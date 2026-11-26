@@ -293,15 +293,22 @@ jobs:
           # Both capabilities this app declares -- Sign in with Apple and push
           # -- are in the profile that was just installed, so they survive into
           # the signature.
+          # Signing settings are passed per-target (-target:Hearth), not globally.
+          # A global PROVISIONING_PROFILE_SPECIFIER applies to every target in
+          # the build graph, including SPM packages -- and a package target like
+          # RevenueCat_RevenueCat rejects a manual profile outright ("does not
+          # support provisioning profiles"). Scoping the three settings to the
+          # app target leaves dependencies on automatic signing, which is what
+          # they expect; only Hearth itself needs the distribution identity.
           xcodebuild archive \
             -project Hearth.xcodeproj \
             -scheme Hearth \
             -configuration Release \
             -sdk iphoneos \
             -archivePath Hearth.xcarchive \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="$DIST_PROFILE_SPECIFIER" \
+            -target:Hearth CODE_SIGN_STYLE=Manual \
+            -target:Hearth CODE_SIGN_IDENTITY="Apple Distribution" \
+            -target:Hearth PROVISIONING_PROFILE_SPECIFIER="$DIST_PROFILE_SPECIFIER" \
             DEVELOPMENT_TEAM=H4VQ9X6KYK \
             CURRENT_PROJECT_VERSION="$BUILD_NUM"
 
