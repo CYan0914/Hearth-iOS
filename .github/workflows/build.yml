@@ -293,22 +293,28 @@ jobs:
           # Both capabilities this app declares -- Sign in with Apple and push
           # -- are in the profile that was just installed, so they survive into
           # the signature.
-          # Signing settings are passed per-target (-target:Hearth), not globally.
-          # A global PROVISIONING_PROFILE_SPECIFIER applies to every target in
-          # the build graph, including SPM packages -- and a package target like
-          # RevenueCat_RevenueCat rejects a manual profile outright ("does not
-          # support provisioning profiles"). Scoping the three settings to the
-          # app target leaves dependencies on automatic signing, which is what
-          # they expect; only Hearth itself needs the distribution identity.
+          # Signing settings are scoped to the app target via buildSettings, not
+          # command-line overrides. A command-line PROVISIONING_PROFILE_SPECIFIER
+          # applies to every target in the graph, including SPM packages -- and
+          # a package target like RevenueCat_RevenueCat rejects a manual profile
+          # outright ("does not support provisioning profiles"). Writing the
+          # three settings into Hearth's own target (via xcodegen, see
+          # project.yml) scopes them to the app; dependencies stay on automatic
+          # signing, which is what they expect. Only Hearth itself needs the
+          # distribution identity.
+          #
+          # The profile specifier comes from the secret at archive time because
+          # it names the CI-installed profile, which is not a repo value.
+          # project.yml declares PROVISIONING_PROFILE_SPECIFIER as
+          # $(HEARTH_DIST_PROFILE_SPECIFIER), so it arrives here as an
+          # environment-backed build setting, target-scoped to Hearth.
           xcodebuild archive \
             -project Hearth.xcodeproj \
             -scheme Hearth \
             -configuration Release \
             -sdk iphoneos \
             -archivePath Hearth.xcarchive \
-            -target:Hearth CODE_SIGN_STYLE=Manual \
-            -target:Hearth CODE_SIGN_IDENTITY="Apple Distribution" \
-            -target:Hearth PROVISIONING_PROFILE_SPECIFIER="$DIST_PROFILE_SPECIFIER" \
+            HEARTH_DIST_PROFILE_SPECIFIER="$DIST_PROFILE_SPECIFIER" \
             DEVELOPMENT_TEAM=H4VQ9X6KYK \
             CURRENT_PROJECT_VERSION="$BUILD_NUM"
 

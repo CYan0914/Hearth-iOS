@@ -65,5 +65,18 @@ targets:
         INFOPLIST_FILE: Resources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         HEARTH_API_BASE: $(HEARTH_API_BASE)
+      configs:
+        Release:
+          # Manual signing, scoped to this target only. A command-line
+          # PROVISIONING_PROFILE_SPECIFIER would apply to every target in the
+          # build graph, including SPM packages -- and a package target like
+          # RevenueCat_RevenueCat rejects a manual profile outright ("does not
+          # support provisioning profiles"). Declared here, the settings land in
+          # Hearth's own buildSettings; dependencies stay on automatic signing.
+          # The specifier value is injected at archive time (see the Archive
+          # step): it names the CI-installed profile, which is not a repo value.
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: $(HEARTH_DIST_PROFILE_SPECIFIER)
     dependencies:
       - package: RevenueCat
