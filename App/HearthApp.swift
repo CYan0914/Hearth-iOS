@@ -30,6 +30,7 @@ struct HearthApp: App {
                 .environmentObject(notifications)
                 .environmentObject(purchases)
                 .task {
+                    RevenueCatObserver.configure()
                     notifications.onTokenReceived = { token in
                         deviceToken = token
                         Task { await registerDevice(token) }

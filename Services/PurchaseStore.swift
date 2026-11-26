@@ -191,6 +191,11 @@ final class PurchaseStore: ObservableObject {
                 // first means a network failure between the two leaves the
                 // purchase acknowledged and the account still on free.
                 await transaction.finish()
+                // The observer sync is informational: RevenueCat records what
+                // the backend just confirmed, for charts only. It never
+                // influences the return value -- the server's answer is the
+                // only authority on what the user owns.
+                await RevenueCatObserver.notifyPurchaseCompleted()
                 if response.active {
                     return true
                 }

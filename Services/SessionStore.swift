@@ -89,6 +89,12 @@ final class SessionStore: ObservableObject {
         startupError = nil
         do {
             apply(try await HearthAPI.me())
+            // A stored session skips `signedIn`, so the RevenueCat binding has
+            // to happen here too -- otherwise launch-restore users stay
+            // anonymous in its charts while sign-in users are attributed.
+            if let user = user {
+                await RevenueCatObserver.identify(userID: user.id)
+            }
         } catch let error as APIError where error.requiresSignOut {
             // The client's unauthorized hook already cleared the token.
             state = .signedOut
@@ -108,6 +114,9 @@ final class SessionStore: ObservableObject {
     func signedIn(session: SessionResponse) async {
         Keychain.saveSessionToken(session.sessionToken)
         state = .signedIn(session.user)
+        // RevenueCat attributes revenue to its own anonymous id until told
+        // otherwise; without this the dashboard shows paying strangers.
+        await RevenueCatObserver.identify(userID: session.user.id)
         // The session response carries the user but not the counts, so one
         // refresh fills in the home screen's numbers.
         await refresh()
@@ -175,6 +184,8 @@ final class SessionStore: ObservableObject {
         templateTier = "core"
         startupError = nil
         state = .signedOut
+        // The next account on this device must not inherit the attribution.
+        Task { await RevenueCatObserver.reset() }
         // Dropped with the session: the tier it reports is per-user, and showing
         // the previous account's tier to the next one would misstate what their
         // plan schedules.

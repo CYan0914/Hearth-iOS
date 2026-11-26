@@ -35,6 +35,11 @@ settings:
       SWIFT_COMPILATION_MODE: wholemodule
       SWIFT_OPTIMIZATION_LEVEL: "-O"
 
+packages:
+  RevenueCat:
+    url: https://github.com/RevenueCat/purchases-ios
+    from: 5.103.2
+
 targets:
   Hearth:
     type: application
@@ -60,3 +65,5 @@ targets:
         INFOPLIST_FILE: Resources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         HEARTH_API_BASE: $(HEARTH_API_BASE)
+    dependencies:
+      - package: RevenueCat
