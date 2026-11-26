@@ -422,12 +422,32 @@ jobs:
         run: |
           mkdir -p ~/private_keys
           echo "$APPSTORE_API_KEY" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
+
+          # altool writes its verdict to stdout and still exits 0. Build 46 was
+          # rejected by App Store Connect with "Invalid Pre-Release Train"
+          # (the 1.0.3 train was closed) and this step reported success
+          # anyway, which made the run look green while nothing had shipped.
+          # The exit code is not the signal; the log is.
+          set +e
           xcrun altool --upload-app \
             -f "ipa/Hearth.ipa" \
             --apiKey "$APPSTORE_KEY_ID" \
             --apiIssuer "$APPSTORE_ISSUER_ID" \
             --type ios \
-            --verbose 2>&1
+            --verbose > upload.log 2>&1
+          status=$?
+          set -e
+
+          # The DEBUG lines list every file in the bundle; they are noise here
+          # and bury the two lines that matter.
+          grep -av "DEBUG:" upload.log | tail -40
+
+          if [ $status -ne 0 ] || grep -qaE \
+               "Failed to upload package|Validation failed|STATE_ERROR|ERROR ITMS" \
+               upload.log; then
+            echo "::error::Upload to TestFlight failed -- see the lines above."
+            exit 1
+          fi
 
   # ─── App Store screenshots (manual, screenshots=true) ─────────────────────
   #
