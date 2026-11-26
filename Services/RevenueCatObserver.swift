@@ -37,6 +37,7 @@ enum RevenueCatObserver {
         Purchases.configure(
             with: .builder(withAPIKey: RevenueCatKey.apiKey)
                 .with(purchasesAreCompletedBy: .myApp, storeKitVersion: .storeKit2)
+                .build()
         )
         #endif
     }
